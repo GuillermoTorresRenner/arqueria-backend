@@ -4,8 +4,7 @@ import * as path from 'path';
 import { nanoid } from 'nanoid';
 import { LoggerService } from '../logger/logger.service';
 
-// Usar require para importar sharp correctamente
-const sharp = require('sharp');
+import * as sharp from 'sharp';
 
 @Injectable()
 export class UploadService {
@@ -292,24 +291,20 @@ export class UploadService {
    * Nota: no hay endpoint HTTP para borrado; método de helper para uso interno.
    */
   async removeFile(filePath: string): Promise<void> {
-    try {
-      let fullPath = filePath;
-      if (!filePath.startsWith(process.cwd())) {
-        fullPath = path.join(process.cwd(), 'public', filePath);
-      }
-
-      await fs.unlink(fullPath);
-
-      await this.loggerService.log({
-        level: 'INFO',
-        message: 'Archivo eliminado',
-        action: 'DELETE_FILE',
-        entityType: 'File',
-        entityId: filePath,
-      });
-    } catch (error) {
-      // Propagar el error para que el llamador decida qué hacer
-      throw error;
+    // Sin try/catch: el error se propaga al llamador, que decide qué hacer.
+    let fullPath = filePath;
+    if (!filePath.startsWith(process.cwd())) {
+      fullPath = path.join(process.cwd(), 'public', filePath);
     }
+
+    await fs.unlink(fullPath);
+
+    await this.loggerService.log({
+      level: 'INFO',
+      message: 'Archivo eliminado',
+      action: 'DELETE_FILE',
+      entityType: 'File',
+      entityId: filePath,
+    });
   }
 }

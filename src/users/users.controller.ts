@@ -9,10 +9,8 @@ import {
   Delete,
   UseGuards,
   Query,
-  Put,
   UseInterceptors,
   UploadedFile,
-  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
@@ -55,11 +53,7 @@ export class UsersController {
   @UseGuards(AuthGuard, RoleGuard)
   @Auth([Roles.ADMIN])
   getUserDashboardInfo() {
-    try {
-      return this.usersService.getDashboardInfo();
-    } catch (error) {
-      throw error;
-    }
+    return this.usersService.getDashboardInfo();
   }
 
   @Get('select')
@@ -166,7 +160,8 @@ export class UsersController {
   @UseInterceptors(FileInterceptor('avatar'))
   @ApiOperation({
     summary: 'Actualizar mi perfil',
-    description: 'Nombre, apellido, teléfono y avatar. El rol no se puede cambiar aquí.',
+    description:
+      'Nombre, apellido, teléfono y avatar. El rol no se puede cambiar aquí.',
   })
   updateMe(
     @ActiveUser() user: ActiveUserData,

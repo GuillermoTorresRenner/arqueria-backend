@@ -3,11 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  RegistrationStatus,
-  TournamentStatus,
-} from '@prisma/client';
+import { Prisma, RegistrationStatus, TournamentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupDrawService } from './group-draw.service';
 import {
@@ -42,8 +38,11 @@ export class TournamentsService {
   }
 
   async findFormat(id: string) {
-    const format = await this.prisma.scoringFormat.findUnique({ where: { id } });
-    if (!format) throw new NotFoundException('Formato de puntuación no encontrado');
+    const format = await this.prisma.scoringFormat.findUnique({
+      where: { id },
+    });
+    if (!format)
+      throw new NotFoundException('Formato de puntuación no encontrado');
     return format;
   }
 
@@ -160,7 +159,9 @@ export class TournamentsService {
         take: limit,
         include: {
           scoringFormat: { select: { id: true, name: true } },
-          _count: { select: { registrations: true, groups: true, rounds: true } },
+          _count: {
+            select: { registrations: true, groups: true, rounds: true },
+          },
         },
       }),
       this.prisma.tournament.count({ where }),
@@ -287,7 +288,10 @@ export class TournamentsService {
    * torneo ya disputado o volver a "borrador" uno con resultados publicados,
    * dejando el marcador público en un estado incoherente.
    */
-  private static readonly STATUS_FLOW: Record<TournamentStatus, TournamentStatus[]> = {
+  private static readonly STATUS_FLOW: Record<
+    TournamentStatus,
+    TournamentStatus[]
+  > = {
     DRAFT: [TournamentStatus.REGISTRATION_OPEN, TournamentStatus.CANCELLED],
     REGISTRATION_OPEN: [
       TournamentStatus.DRAFT,
@@ -340,9 +344,13 @@ export class TournamentsService {
   async duplicate(id: string, slug: string, name: string, startsAt: string) {
     const source = await this.findOne(id);
 
-    const existing = await this.prisma.tournament.findUnique({ where: { slug } });
+    const existing = await this.prisma.tournament.findUnique({
+      where: { slug },
+    });
     if (existing) {
-      throw new BadRequestException(`Ya existe un torneo con el slug "${slug}"`);
+      throw new BadRequestException(
+        `Ya existe un torneo con el slug "${slug}"`,
+      );
     }
 
     return this.prisma.tournament.create({
@@ -399,7 +407,8 @@ export class TournamentsService {
       scores: {
         recorded: scores,
         expected: expectedEnds,
-        progress: expectedEnds > 0 ? Math.round((scores / expectedEnds) * 100) : 0,
+        progress:
+          expectedEnds > 0 ? Math.round((scores / expectedEnds) * 100) : 0,
       },
       unassigned: await this.prisma.registration.count({
         where: {
@@ -450,7 +459,9 @@ export class TournamentsService {
   /// Una ronda con puntajes no se borra sin confirmación explícita.
   async removeRoundSafe(id: string, force = false) {
     await this.findRound(id);
-    const scoreCount = await this.prisma.score.count({ where: { roundId: id } });
+    const scoreCount = await this.prisma.score.count({
+      where: { roundId: id },
+    });
     if (scoreCount > 0 && !force) {
       throw new BadRequestException(
         `La ronda tiene ${scoreCount} series registradas. ` +
@@ -510,7 +521,9 @@ export class TournamentsService {
     return this.prisma.registration.findMany({
       where: { tournamentId },
       include: {
-        member: { include: { user: true, categories: { include: { category: true } } } },
+        member: {
+          include: { user: true, categories: { include: { category: true } } },
+        },
         group: true,
       },
       orderBy: { createdAt: 'asc' },
@@ -610,7 +623,11 @@ export class TournamentsService {
    * Sortea los grupos del torneo. Borra los grupos previos y crea unos nuevos,
    * dejando registrado el sorteo con su semilla para que sea auditable.
    */
-  async drawGroups(tournamentId: string, dto: DrawGroupsDto, drawnById?: string) {
+  async drawGroups(
+    tournamentId: string,
+    dto: DrawGroupsDto,
+    drawnById?: string,
+  ) {
     const tournament = await this.findOne(tournamentId);
 
     if (tournament.status === TournamentStatus.FINISHED) {

@@ -31,13 +31,19 @@ describe('UsersService', () => {
     };
 
     it('nunca expone la contraseña ni el refresh token', () => {
-      const out = buildService().formatUserResponse(raw) as Record<string, unknown>;
+      const out = buildService().formatUserResponse(raw) as Record<
+        string,
+        unknown
+      >;
       expect(out).not.toHaveProperty('password');
       expect(out).not.toHaveProperty('refreshToken');
     });
 
     it('expone los campos del CRUD, incluido el teléfono', () => {
-      const out = buildService().formatUserResponse(raw) as Record<string, unknown>;
+      const out = buildService().formatUserResponse(raw) as Record<
+        string,
+        unknown
+      >;
       expect(out).toMatchObject({
         id: 'u1',
         email: 'arquero@galadhrym.cl',
@@ -73,7 +79,11 @@ describe('UsersService', () => {
     it('un usuario debe acreditar su contraseña actual', async () => {
       const service = buildService(prismaWith());
       await expect(
-        service.changePassword('u1', { newPassword: 'NuevaClave1' }, Roles.MEMBER),
+        service.changePassword(
+          'u1',
+          { newPassword: 'NuevaClave1' },
+          Roles.MEMBER,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -105,14 +115,22 @@ describe('UsersService', () => {
       const update = jest.fn().mockResolvedValue({});
       const service = buildService(prismaWith(update));
       await expect(
-        service.changePassword('u1', { newPassword: 'NuevaClave1' }, Roles.ADMIN),
+        service.changePassword(
+          'u1',
+          { newPassword: 'NuevaClave1' },
+          Roles.ADMIN,
+        ),
       ).resolves.toEqual({ message: 'Contraseña actualizada' });
     });
 
     it('guarda la nueva contraseña hasheada e invalida las sesiones', async () => {
       const update = jest.fn().mockResolvedValue({});
       const service = buildService(prismaWith(update));
-      await service.changePassword('u1', { newPassword: 'NuevaClave1' }, Roles.ADMIN);
+      await service.changePassword(
+        'u1',
+        { newPassword: 'NuevaClave1' },
+        Roles.ADMIN,
+      );
 
       const data = update.mock.calls[0][0].data;
       expect(data.password).not.toBe('NuevaClave1');
@@ -125,7 +143,11 @@ describe('UsersService', () => {
         users: { findUnique: jest.fn().mockResolvedValue(null) },
       });
       await expect(
-        service.changePassword('nope', { newPassword: 'NuevaClave1' }, Roles.ADMIN),
+        service.changePassword(
+          'nope',
+          { newPassword: 'NuevaClave1' },
+          Roles.ADMIN,
+        ),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -170,9 +192,14 @@ describe('UsersService', () => {
         role: Roles.MEMBER,
       })) as Record<string, unknown>;
 
-      expect(prisma.users.create.mock.calls[0][0].data.phone).toBe('+56900000000');
+      expect(prisma.users.create.mock.calls[0][0].data.phone).toBe(
+        '+56900000000',
+      );
       expect(email.sendWelcomeEmail).toHaveBeenCalledWith(
-        expect.objectContaining({ to: 'nuevo@galadhrym.cl', phone: '+56900000000' }),
+        expect.objectContaining({
+          to: 'nuevo@galadhrym.cl',
+          phone: '+56900000000',
+        }),
       );
       expect(out).not.toHaveProperty('password');
     });

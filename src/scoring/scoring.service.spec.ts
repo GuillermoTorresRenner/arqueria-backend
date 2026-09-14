@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { ScoreStatus } from '@prisma/client';
 import { ScoringService } from './scoring.service';
 import { Roles } from '../auth';
 
@@ -75,7 +74,12 @@ describe('ScoringService', () => {
     });
 
     it('rechaza una serie con más flechas de las permitidas', () => {
-      const arrows = [{ label: '10' }, { label: '9' }, { label: '8' }, { label: '7' }];
+      const arrows = [
+        { label: '10' },
+        { label: '9' },
+        { label: '8' },
+        { label: '7' },
+      ];
       expect(() => (service as any).assertArrowCount(arrows, 3)).toThrow(
         BadRequestException,
       );
@@ -107,7 +111,11 @@ describe('ScoringService', () => {
 
     it('un socio no puede cargar puntajes', async () => {
       await expect(
-        (service as any).assertCanScore(context('g1'), 'member-1', Roles.MEMBER),
+        (service as any).assertCanScore(
+          context('g1'),
+          'member-1',
+          Roles.MEMBER,
+        ),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -156,7 +164,12 @@ describe('ScoringService', () => {
       return svc;
     };
 
-    const score = (memberId: string, total: number, innerTens = 0, tens = 0) => ({
+    const score = (
+      memberId: string,
+      total: number,
+      innerTens = 0,
+      tens = 0,
+    ) => ({
       memberId,
       total,
       innerTens,
@@ -184,10 +197,7 @@ describe('ScoringService', () => {
     });
 
     it('desempata por zonas interiores cuando el total es igual', async () => {
-      const svc = buildService([
-        score('ana', 280, 5),
-        score('beto', 280, 9),
-      ]);
+      const svc = buildService([score('ana', 280, 5), score('beto', 280, 9)]);
       const { entries } = await svc.getLeaderboard('t1');
       expect(entries[0].name).toBe('beto');
     });

@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Get } from '@nestjs/common';
 import { EmailService } from './email.service';
-import { SendPasswordResetDto, SendTestEmailDto } from './dto/email.dto';
+import { SendPasswordResetDto } from './dto/email.dto';
 
 @Controller('email')
 export class EmailController {

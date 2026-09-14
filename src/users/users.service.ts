@@ -18,7 +18,6 @@ import * as bcrypt from 'bcrypt';
 import { UploadService } from '../upload/upload.service';
 import { EmailService } from '../email/email.service';
 import { buildUserAvatarUrl } from './user.helper';
-import { ActiveUserData } from '../auth/decorators/activeUser.decorator';
 
 @Injectable()
 export class UsersService {
@@ -604,5 +603,4 @@ export class UsersService {
       });
     }
   }
-
 }

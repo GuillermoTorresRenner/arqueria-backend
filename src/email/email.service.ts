@@ -28,7 +28,6 @@ export class EmailService {
     });
   }
 
-
   /**
    * Carga y compila una plantilla Handlebars.
    *
@@ -36,7 +35,10 @@ export class EmailService {
    * cae a `src/` en desarrollo. Las plantillas se cachean: compilarlas en
    * cada envío es trabajo repetido.
    */
-  private readonly templateCache = new Map<string, handlebars.TemplateDelegate>();
+  private readonly templateCache = new Map<
+    string,
+    handlebars.TemplateDelegate
+  >();
 
   private renderTemplate(name: string, data: Record<string, unknown>): string {
     let compiled = this.templateCache.get(name);
@@ -236,7 +238,10 @@ export class EmailService {
         userName: fullName,
         error: error.message,
       });
-      console.error(`No se pudo enviar el email de bienvenida a ${to}:`, error.message);
+      console.error(
+        `No se pudo enviar el email de bienvenida a ${to}:`,
+        error.message,
+      );
       return false;
     }
   }

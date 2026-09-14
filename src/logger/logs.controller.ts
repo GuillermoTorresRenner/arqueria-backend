@@ -2,11 +2,8 @@ import {
   Controller,
   Get,
   Query,
-  Param,
-  UseGuards,
   HttpException,
   HttpStatus,
-  Delete,
 } from '@nestjs/common';
 import {
   ApiTags,

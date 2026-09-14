@@ -63,7 +63,7 @@ export class NotificationsGateway
   }
 
   @SubscribeMessage('echo')
-  handleEcho(@MessageBody() data: any, @ConnectedSocket() client: Socket) {
+  handleEcho(@MessageBody() data: any) {
     // simply echo back
     return { event: 'echo', data };
   }

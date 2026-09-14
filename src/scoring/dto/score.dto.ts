@@ -31,7 +31,10 @@ export class CreateScoreDto {
   @IsNotEmpty()
   memberId: string;
 
-  @ApiProperty({ example: 1, description: 'Número de serie dentro de la ronda' })
+  @ApiProperty({
+    example: 1,
+    description: 'Número de serie dentro de la ronda',
+  })
   @IsInt()
   @Min(1)
   endNumber: number;

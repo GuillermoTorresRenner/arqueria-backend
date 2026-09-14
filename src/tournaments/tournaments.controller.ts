@@ -129,7 +129,8 @@ export class TournamentsController {
   @Auth([Roles.ADMIN, Roles.JUDGE])
   @ApiOperation({
     summary: 'Resumen del torneo',
-    description: 'Inscripciones, grupos, avance de puntajes y arqueros sin asignar.',
+    description:
+      'Inscripciones, grupos, avance de puntajes y arqueros sin asignar.',
   })
   getStats(@Param('id') id: string) {
     return this.tournamentsService.getStats(id);
@@ -156,14 +157,20 @@ export class TournamentsController {
     description: 'Copia sus rondas y configuración como borrador.',
   })
   duplicate(@Param('id') id: string, @Body() dto: DuplicateTournamentDto) {
-    return this.tournamentsService.duplicate(id, dto.slug, dto.name, dto.startsAt);
+    return this.tournamentsService.duplicate(
+      id,
+      dto.slug,
+      dto.name,
+      dto.startsAt,
+    );
   }
 
   @Patch(':id/cancel')
   @Auth([Roles.ADMIN])
   @ApiOperation({
     summary: 'Cancelar torneo',
-    description: 'Alternativa no destructiva a eliminarlo: conserva el historial.',
+    description:
+      'Alternativa no destructiva a eliminarlo: conserva el historial.',
   })
   cancel(@Param('id') id: string) {
     return this.tournamentsService.cancel(id);

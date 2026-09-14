@@ -226,7 +226,9 @@ export class ScoringService {
       include: { group: true },
     });
     if (!registration) {
-      throw new BadRequestException('El arquero no está inscrito en este torneo');
+      throw new BadRequestException(
+        'El arquero no está inscrito en este torneo',
+      );
     }
     if (registration.status === 'WITHDRAWN') {
       throw new BadRequestException('El arquero se retiró del torneo');

@@ -12,7 +12,8 @@ import {
 export class CreateSectionDto {
   @ApiProperty({
     example: 'home',
-    description: 'Identificador estable que usa el frontend. Solo minúsculas, números y guiones.',
+    description:
+      'Identificador estable que usa el frontend. Solo minúsculas, números y guiones.',
   })
   @IsString()
   @IsNotEmpty()

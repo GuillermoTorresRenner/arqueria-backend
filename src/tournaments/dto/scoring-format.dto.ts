@@ -73,4 +73,6 @@ export class CreateScoringFormatDto {
   isActive?: boolean;
 }
 
-export class UpdateScoringFormatDto extends PartialType(CreateScoringFormatDto) {}
+export class UpdateScoringFormatDto extends PartialType(
+  CreateScoringFormatDto,
+) {}

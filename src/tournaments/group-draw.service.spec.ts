@@ -3,7 +3,8 @@ import { GroupDrawService } from './group-draw.service';
 
 describe('GroupDrawService', () => {
   const service = new GroupDrawService();
-  const ids = (n: number) => Array.from({ length: n }, (_, i) => `reg-${i + 1}`);
+  const ids = (n: number) =>
+    Array.from({ length: n }, (_, i) => `reg-${i + 1}`);
 
   it('reparte a todos los inscritos sin perder ni duplicar a nadie', () => {
     const registrationIds = ids(23);
@@ -16,7 +17,10 @@ describe('GroupDrawService', () => {
   });
 
   it('equilibra los grupos: se diferencian como mucho en un integrante', () => {
-    const { groups } = service.draw({ registrationIds: ids(10), groupCount: 3 });
+    const { groups } = service.draw({
+      registrationIds: ids(10),
+      groupCount: 3,
+    });
     const sizes = groups.map((g) => g.length);
     expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1);
     expect(sizes.reduce((a, b) => a + b, 0)).toBe(10);
@@ -24,16 +28,32 @@ describe('GroupDrawService', () => {
 
   it('es reproducible: la misma semilla da el mismo sorteo', () => {
     const registrationIds = ids(15);
-    const first = service.draw({ registrationIds, groupCount: 3, seed: 'copa-2026' });
-    const second = service.draw({ registrationIds, groupCount: 3, seed: 'copa-2026' });
+    const first = service.draw({
+      registrationIds,
+      groupCount: 3,
+      seed: 'copa-2026',
+    });
+    const second = service.draw({
+      registrationIds,
+      groupCount: 3,
+      seed: 'copa-2026',
+    });
     expect(second.groups).toEqual(first.groups);
     expect(second.seed).toBe('copa-2026');
   });
 
   it('semillas distintas producen repartos distintos', () => {
     const registrationIds = ids(20);
-    const a = service.draw({ registrationIds, groupCount: 4, seed: 'semilla-a' });
-    const b = service.draw({ registrationIds, groupCount: 4, seed: 'semilla-b' });
+    const a = service.draw({
+      registrationIds,
+      groupCount: 4,
+      seed: 'semilla-a',
+    });
+    const b = service.draw({
+      registrationIds,
+      groupCount: 4,
+      seed: 'semilla-b',
+    });
     expect(b.groups).not.toEqual(a.groups);
   });
 
@@ -49,9 +69,9 @@ describe('GroupDrawService', () => {
   });
 
   it('rechaza más grupos que inscritos', () => {
-    expect(() => service.draw({ registrationIds: ids(3), groupCount: 5 })).toThrow(
-      BadRequestException,
-    );
+    expect(() =>
+      service.draw({ registrationIds: ids(3), groupCount: 5 }),
+    ).toThrow(BadRequestException);
   });
 
   it('admite un único grupo', () => {

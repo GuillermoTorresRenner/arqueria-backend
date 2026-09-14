@@ -16,10 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { SendInvitationDto } from './dto/send-invitation.dto';
-import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { Auth } from './decorators/auth.decorator';
-import { Roles } from './roles.enum';
 import { UsersService } from '../users/users.service';
 import { ActiveUser, ActiveUserData } from './decorators/activeUser.decorator';
 import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -234,45 +231,4 @@ export class AuthController {
       });
     }
   }
-
-  @Post('complete-registration')
-  @ApiOperation({ summary: 'Completar registro con token y datos completos' })
-  @ApiResponse({
-    status: 200,
-    description: 'Registro completado exitosamente',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Token inválido o expirado',
-  })
-  async completeRegistration(
-    @Body() completeRegistrationDto: CompleteRegistrationDto,
-  ): Promise<any> {
-    return await this.authService.completeRegistration(completeRegistrationDto);
-  }
-
-  @Post('send-invitation')
-  @ApiOperation({ summary: 'Enviar invitación de registro a un cliente' })
-  @ApiResponse({
-    status: 200,
-    description: 'Invitación enviada exitosamente',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Datos inválidos',
-  })
-  async sendInvitation(@Body() sendInvitationDto: SendInvitationDto) {
-    try {
-      const result = await this.authService.sendInvitation(sendInvitationDto);
-      return {
-        success: true,
-        message: 'Invitación enviada exitosamente',
-        token: result.token,
-      };
-    } catch (error) {
-      throw new InternalServerErrorException(
-        'Error al enviar invitación',
-        error.message,
-      );
-    }
-  }}
+}

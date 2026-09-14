@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { LoggerService } from '../logger/logger.service';
-
-import { addDays, isBefore, isAfter, differenceInDays } from 'date-fns';
 
 @Injectable()
 export class CronService {

@@ -28,7 +28,8 @@ export class ContentController {
   @Get('public')
   @ApiOperation({
     summary: 'Contenido publicado de la landing',
-    description: 'Secciones y bloques activos, ordenados. No requiere autenticación.',
+    description:
+      'Secciones y bloques activos, ordenados. No requiere autenticación.',
   })
   getPublicContent() {
     return this.contentService.getPublicContent();

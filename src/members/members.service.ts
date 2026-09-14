@@ -89,7 +89,14 @@ export class MembersService {
 
   async update(id: string, dto: UpdateMemberDto) {
     await this.findOne(id);
-    const { categoryIds, birthDate, membershipEnd, userId, ...rest } = dto;
+    // userId se descarta: el socio no cambia de usuario en una actualización.
+    const {
+      categoryIds,
+      birthDate,
+      membershipEnd,
+      userId: _userId,
+      ...rest
+    } = dto;
     await this.assertCategoriesExist(categoryIds);
 
     return this.prisma.member.update({

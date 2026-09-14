@@ -14,8 +14,6 @@ import { RegisterDto } from './dto/register.dto';
 import { EmailService } from '../email/email.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { SendInvitationDto } from './dto/send-invitation.dto';
-import { CompleteRegistrationDto } from './dto/complete-registration.dto';
 import { LoggerService } from '../logger/logger.service';
 @Injectable()
 export class AuthService {
@@ -303,47 +301,6 @@ export class AuthService {
 
       // Error genérico
       throw new BadRequestException('Error al cambiar contraseña');
-    }
-  }
-
-  async sendInvitation(
-    sendInvitationDto: SendInvitationDto,
-  ): Promise<{ token: string }> {
-    // No implementado en este Boilerplate simplificado
-    throw new BadRequestException(
-      'Invitaciones no implementadas en este boilerplate',
-    );
-  }
-
-  async completeRegistration(
-    completeRegistrationDto: CompleteRegistrationDto,
-  ): Promise<{ message: string; user: any }> {
-    const { token, password, ...registrationData } = completeRegistrationDto;
-
-    try {
-      // Funcionalidad de registro por invitación no implementada en este boilerplate simplificado
-      throw new BadRequestException(
-        'Registro por invitación no implementado en este boilerplate',
-      );
-    } catch (error) {
-      if (
-        error instanceof UnauthorizedException ||
-        error instanceof BadRequestException ||
-        error instanceof NotFoundException
-      ) {
-        throw error;
-      }
-
-      if (error.name === 'JsonWebTokenError') {
-        throw new UnauthorizedException('Token inválido');
-      }
-      if (error.name === 'TokenExpiredError') {
-        throw new UnauthorizedException(
-          'El token ha expirado. Solicita un nuevo registro',
-        );
-      }
-
-      throw new BadRequestException('Error al completar registro');
     }
   }
 

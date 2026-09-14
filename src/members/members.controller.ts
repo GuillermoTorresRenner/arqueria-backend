@@ -103,10 +103,7 @@ export class MembersController {
     summary: 'Cambiar estado del socio',
     description: 'Aprobar (ACTIVE), suspender o dar de baja.',
   })
-  updateStatus(
-    @Param('id') id: string,
-    @Body('status') status: MemberStatus,
-  ) {
+  updateStatus(@Param('id') id: string, @Body('status') status: MemberStatus) {
     return this.membersService.updateStatus(id, status);
   }
 

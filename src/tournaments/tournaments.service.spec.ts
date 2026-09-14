@@ -18,7 +18,10 @@ describe('TournamentsService', () => {
 
     it('permite arrancar el torneo desde inscripciones abiertas', () => {
       expect(() =>
-        assert(TournamentStatus.REGISTRATION_OPEN, TournamentStatus.IN_PROGRESS),
+        assert(
+          TournamentStatus.REGISTRATION_OPEN,
+          TournamentStatus.IN_PROGRESS,
+        ),
       ).not.toThrow();
     });
 
@@ -40,7 +43,10 @@ describe('TournamentsService', () => {
 
     it('NO permite reabrir inscripciones de un torneo en curso', () => {
       expect(() =>
-        assert(TournamentStatus.IN_PROGRESS, TournamentStatus.REGISTRATION_OPEN),
+        assert(
+          TournamentStatus.IN_PROGRESS,
+          TournamentStatus.REGISTRATION_OPEN,
+        ),
       ).toThrow(BadRequestException);
     });
 
@@ -88,7 +94,11 @@ describe('TournamentsService', () => {
   });
 
   describe('remove', () => {
-    const tournament = { id: 't1', name: 'Copa', status: TournamentStatus.FINISHED };
+    const tournament = {
+      id: 't1',
+      name: 'Copa',
+      status: TournamentStatus.FINISHED,
+    };
 
     it('se niega a borrar un torneo con puntajes si no se fuerza', async () => {
       const service = build({
@@ -135,9 +145,11 @@ describe('TournamentsService', () => {
       const update = jest.fn().mockResolvedValue({});
       const service = build({
         registration: {
-          findUnique: jest
-            .fn()
-            .mockResolvedValue({ id: 'r1', memberId: 'm1', tournamentId: 't1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            memberId: 'm1',
+            tournamentId: 't1',
+          }),
           update,
           delete: jest.fn(),
         },
@@ -157,9 +169,11 @@ describe('TournamentsService', () => {
       const del = jest.fn().mockResolvedValue({});
       const service = build({
         registration: {
-          findUnique: jest
-            .fn()
-            .mockResolvedValue({ id: 'r1', memberId: 'm1', tournamentId: 't1' }),
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'r1',
+            memberId: 'm1',
+            tournamentId: 't1',
+          }),
           update: jest.fn(),
           delete: del,
         },

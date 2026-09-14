@@ -1,12 +1,5 @@
-import {
-  IsOptional,
-  IsNumber,
-  IsString,
-  IsIn,
-  IsEnum,
-  IsBoolean,
-} from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { IsOptional, IsNumber, IsString, IsIn, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Roles } from '../../auth/roles.enum';
 
@@ -61,7 +54,6 @@ export class FilterUserDto {
   @IsString()
   surname?: string;
 
-
   @ApiPropertyOptional({
     description: 'Filtrar por rol',
     example: 'ADMIN',
@@ -70,16 +62,10 @@ export class FilterUserDto {
   @IsEnum(Roles)
   role?: Roles;
 
-
-
-
-
   @ApiPropertyOptional({
     description: 'Filtrar por estado (activo/inactivo)',
     example: true,
   })
   @IsOptional()
   isActive?: string;
-
-
 }

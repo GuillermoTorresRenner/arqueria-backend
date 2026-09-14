@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import {
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateGroupDto {
   @ApiProperty({ example: 'Paralela A' })
@@ -48,7 +42,9 @@ export class AssignMemberDto {
   @IsNotEmpty()
   registrationId: string;
 
-  @ApiPropertyOptional({ description: 'Grupo destino; null lo deja sin asignar' })
+  @ApiPropertyOptional({
+    description: 'Grupo destino; null lo deja sin asignar',
+  })
   @IsOptional()
   @IsString()
   groupId?: string | null;

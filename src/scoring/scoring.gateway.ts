@@ -19,7 +19,9 @@ import { Server, Socket } from 'socket.io';
   namespace: 'scoring',
   cors: { origin: true, credentials: true },
 })
-export class ScoringGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ScoringGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ScoringGateway.name);
 
@@ -36,7 +38,8 @@ export class ScoringGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @MessageBody() data: { tournamentId: string },
     @ConnectedSocket() client: Socket,
   ) {
-    if (!data?.tournamentId) return { ok: false, error: 'tournamentId requerido' };
+    if (!data?.tournamentId)
+      return { ok: false, error: 'tournamentId requerido' };
     client.join(this.room(data.tournamentId));
     return { ok: true, room: this.room(data.tournamentId) };
   }
