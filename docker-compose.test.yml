@@ -1,0 +1,58 @@
+name: 'abma_qa'
+
+services:
+  db:
+    image: postgres:17
+    restart: always
+    container_name: '${PREFIX}_db'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - internal
+    shm_size: '128mb'
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD}'
+      POSTGRES_DB: '${DB_NAME}'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${DB_NAME}']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:alpine
+    restart: always
+    container_name: '${PREFIX}_redis'
+    networks:
+      - internal
+
+  backend:
+    image: 'lanek/abma-backend:test'
+    container_name: '${PREFIX}_backend'
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+      - web
+    volumes:
+      - ./public:/app/public
+
+networks:
+  internal:
+    driver: bridge
+    name: 'abma_internal_net_qa'
+  web:
+    external: true
+    name: web
+
+volumes:
+  postgres_data:
+    driver: local
+    name: 'abma_qa_postgres_data'

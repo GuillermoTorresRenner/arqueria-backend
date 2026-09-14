@@ -1,0 +1,70 @@
+/// Socios del club. Un Member siempre cuelga de un Users (auth); la categoría
+/// se guarda como referencia a Category para poder cambiarla sin tocar código.
+
+model Member {
+  id            String       @id @default(cuid())
+  userId        String       @unique
+  memberNumber  Int          @unique @default(autoincrement())
+  documentId    String?      @unique /// RUT o documento
+  birthDate     DateTime?
+  phone         String?
+  joinedAt      DateTime     @default(now())
+  status        MemberStatus @default(PENDING)
+  /// Vigencia de la membresía; null = sin vencimiento registrado
+  membershipEnd DateTime?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user         Users            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories   MemberCategory[]
+  registrations Registration[]
+  scores       Score[]
+
+  @@index([status])
+  @@map("members")
+}
+
+enum MemberStatus {
+  PENDING  /// registrado, aún no aprobado por un admin
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+/// Categorías parametrizables (división de arco, rango etario, género...).
+/// No se hardcodean: el admin las administra desde el panel.
+model Category {
+  id        String       @id @default(cuid())
+  kind      CategoryKind
+  code      String /// "RECURVO", "CADETE", "FEMENINO"
+  label     String
+  minAge    Int?
+  maxAge    Int?
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  members MemberCategory[]
+
+  @@unique([kind, code])
+  @@map("categories")
+}
+
+enum CategoryKind {
+  DIVISION /// tipo de arco
+  AGE
+  GENDER
+}
+
+model MemberCategory {
+  memberId   String
+  categoryId String
+  assignedAt DateTime @default(now())
+
+  member   Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, categoryId])
+  @@map("member_categories")
+}

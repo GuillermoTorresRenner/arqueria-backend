@@ -1,0 +1,138 @@
+name: Deploy QA Backend to Hostinger VPS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - QA
+
+env:
+  DOCKERHUB_REPOSITORY: lanek/abma-backend
+  PROJECT_PATH: /home/deployer/proyectos/abma/qa/back
+  COMPOSE_PROJECT: abma_qa
+
+jobs:
+  deploy:
+    name: Build, Push and Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build, tag and push image
+        run: |
+          COMMIT_TAG=${{ github.sha }}
+          docker build -t "$DOCKERHUB_REPOSITORY:test-$COMMIT_TAG" -t "$DOCKERHUB_REPOSITORY:test" .
+          docker push "$DOCKERHUB_REPOSITORY:test-$COMMIT_TAG"
+          docker push "$DOCKERHUB_REPOSITORY:test"
+
+      - name: Upload files to VPS
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: 'docker-compose.test.yml'
+          target: ${{ env.PROJECT_PATH }}/
+          strip_components: 0
+          overwrite: true
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          envs: DOCKERHUB_REPOSITORY,PROJECT_PATH,COMPOSE_PROJECT
+          script: |
+            set -e
+            echo "=== Preparando entorno ==="
+            mkdir -p $PROJECT_PATH/public
+            cd $PROJECT_PATH
+
+            echo "DOCKERHUB_REPOSITORY=$DOCKERHUB_REPOSITORY" > .env
+            echo "${{ secrets.QA_ENV_VARS }}" >> .env
+            chmod 600 .env
+
+            # El scp sube docker-compose.test.yml; el compose lo espera como docker-compose.yml
+            if [ -f docker-compose.test.yml ]; then
+              rm -f docker-compose.yml
+              mv docker-compose.test.yml docker-compose.yml
+            fi
+
+            set -a; . ./.env; set +a
+
+            # El backend corre como uid 1001 (usuario nestjs)
+            sudo chown -R 1001:1001 public || chown -R 1001:1001 public || true
+
+            echo "=== Descargando imagen ==="
+            for i in 1 2 3; do
+              docker pull "$DOCKERHUB_REPOSITORY:test" && break
+              echo "Intento $i falló, reintentando en 10s..."; sleep 10
+              [ $i -eq 3 ] && { echo "No se pudo descargar la imagen"; exit 1; }
+            done
+
+            echo "=== Levantando base de datos ==="
+            docker compose up -d db redis
+
+            echo "Esperando a que PostgreSQL acepte conexiones..."
+            for i in $(seq 1 30); do
+              docker compose exec -T db pg_isready -U "$POSTGRES_USER" -d "$DB_NAME" && break
+              sleep 2
+              [ $i -eq 30 ] && { echo "PostgreSQL no respondió"; exit 1; }
+            done
+
+            echo "=== Migraciones Prisma ==="
+            # Baseline idempotente: si la BD ya tiene tablas pero no _prisma_migrations
+            # (p. ej. restaurada de un dump), marca la primera migración como aplicada
+            # para evitar el error P3005.
+            HAS_TABLES=$(docker compose exec -T db psql -U "$POSTGRES_USER" -d "$DB_NAME" -tAc \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';")
+            HAS_MIGRATIONS=$(docker compose exec -T db psql -U "$POSTGRES_USER" -d "$DB_NAME" -tAc \
+              "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='_prisma_migrations';")
+
+            if [ "$HAS_TABLES" -gt 0 ] && [ "$HAS_MIGRATIONS" -eq 0 ]; then
+              FIRST_MIGRATION=$(docker compose run --rm --no-deps --entrypoint sh backend \
+                -c "ls -1 prisma/migrations | grep -v migration_lock | head -n1" | tr -d '\r')
+              echo "BD existente sin historial de migraciones. Baseline en: $FIRST_MIGRATION"
+              docker compose run --rm --no-deps --entrypoint sh backend \
+                -c "npx prisma migrate resolve --applied $FIRST_MIGRATION"
+            fi
+
+            docker compose run --rm --no-deps --entrypoint sh backend \
+              -c "npx prisma migrate deploy"
+
+            echo "=== Levantando backend ==="
+            docker compose up -d
+            docker compose ps
+
+            echo "=== Deploy completado ==="

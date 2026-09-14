@@ -1,0 +1,32 @@
+# Dependencias para desarrollo local. El backend corre en el host (npm run start:dev).
+name: abma_dev
+
+services:
+  db:
+    image: postgres:17
+    container_name: ABMA_DEV_db
+    restart: unless-stopped
+    ports:
+      - '5440:5432'
+    environment:
+      POSTGRES_USER: abma
+      POSTGRES_PASSWORD: abma_local
+      POSTGRES_DB: abma
+    volumes:
+      - abma_dev_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U abma -d abma']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:alpine
+    container_name: ABMA_DEV_redis
+    restart: unless-stopped
+    ports:
+      - '6390:6379'
+
+volumes:
+  abma_dev_postgres:
+    name: abma_dev_postgres

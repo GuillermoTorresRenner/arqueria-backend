@@ -1,0 +1,30 @@
+model Users {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  password       String
+  name           String?
+  surname        String?
+  phone          String?
+  lastConnection DateTime?
+  refreshToken   String?
+  userRoles      Role      @default(MEMBER)
+  avatar         String?
+  isActive       Boolean   @default(true)
+  emailVerified  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  member           Member?
+  judgedGroups     TournamentGroup[]
+  groupDraws       GroupDraw[]
+  scoresRecorded   Score[]          @relation("ScoreRecordedBy")
+  scoresValidated  Score[]          @relation("ScoreValidatedBy")
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  JUDGE
+  MEMBER
+}

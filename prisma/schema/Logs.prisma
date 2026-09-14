@@ -1,0 +1,19 @@
+model Logs {
+  id          String   @id @default(cuid())
+  message     String
+  description String?
+  action      String?
+  entityType  String?
+  entityId    String?
+  userId      String?
+  level       LogLevel
+  timestamp   DateTime @default(now())
+
+  @@map("logs")
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}

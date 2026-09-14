@@ -1,0 +1,43 @@
+/// CMS: la landing se compone de secciones ordenadas, cada una con bloques tipados.
+/// El admin edita, reordena y activa/desactiva; no crea rutas nuevas.
+
+model Section {
+  id        String   @id @default(cuid())
+  key       String   @unique /// identificador estable usado por el frontend: "home", "nosotros"
+  title     String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  blocks Block[]
+
+  @@index([isActive, order])
+  @@map("sections")
+}
+
+model Block {
+  id        String    @id @default(cuid())
+  sectionId String
+  type      BlockType
+  order     Int       @default(0)
+  isActive  Boolean   @default(true)
+  /// Contenido tipado según `type`. Su forma la validan los DTOs del backend.
+  data      Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, order])
+  @@map("blocks")
+}
+
+enum BlockType {
+  HERO
+  RICH_TEXT
+  GALLERY
+  CARDS
+  CTA
+  FAQ
+}

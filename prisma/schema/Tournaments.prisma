@@ -1,0 +1,136 @@
+/// Formato de puntuación PARAMETRIZABLE. Las modalidades del club están por definir,
+/// así que aquí no se hardcodea ninguna regla (ni World Archery ni 3D): el torneo
+/// declara su formato y el backend valida cada flecha contra él.
+model ScoringFormat {
+  id           String   @id @default(cuid())
+  name         String   @unique /// "WA 18m indoor", "3D club"
+  description  String?
+  arrowsPerEnd Int /// flechas por serie
+  endsPerRound Int /// series por ronda
+  maxPerArrow  Int /// puntaje máximo de una flecha
+  /// Zonas válidas: [{ "label": "X", "value": 10, "isInner": true }, ...]
+  /// El orden define cómo se desempata (más X, luego más 10, etc.).
+  zones        Json
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournaments Tournament[]
+
+  @@map("scoring_formats")
+}
+
+model Tournament {
+  id              String           @id @default(cuid())
+  slug            String           @unique
+  name            String
+  description     String?
+  location        String?
+  startsAt        DateTime
+  endsAt          DateTime?
+  registrationEnd DateTime?
+  scoringFormatId String
+  status          TournamentStatus @default(DRAFT)
+  /// Publica el marcador en vivo para el público
+  isPublic        Boolean          @default(false)
+  maxParticipants Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  scoringFormat ScoringFormat  @relation(fields: [scoringFormatId], references: [id])
+  rounds        Round[]
+  groups        TournamentGroup[]
+  registrations Registration[]
+  draws         GroupDraw[]
+
+  @@index([status, startsAt])
+  @@map("tournaments")
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  IN_PROGRESS
+  FINISHED
+  CANCELLED
+}
+
+model Round {
+  id           String   @id @default(cuid())
+  tournamentId String
+  name         String /// "Clasificatoria", "Eliminatoria"
+  order        Int      @default(0)
+  distance     Int? /// metros, si aplica a la modalidad
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  scores     Score[]
+
+  @@unique([tournamentId, order])
+  @@map("rounds")
+}
+
+/// Grupo/paralela. Se arma por sorteo aleatorio y el admin puede reasignar a mano.
+model TournamentGroup {
+  id           String   @id @default(cuid())
+  tournamentId String
+  name         String /// "Paralela A", "Grupo 1"
+  order        Int      @default(0)
+  /// Juez asignado: solo él (y un ADMIN) puede cargar puntajes de este grupo.
+  judgeId      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  judge         Users?         @relation(fields: [judgeId], references: [id], onDelete: SetNull)
+  registrations Registration[]
+
+  @@unique([tournamentId, order])
+  @@index([judgeId])
+  @@map("tournament_groups")
+}
+
+/// Registro del sorteo, con su semilla, para que sea auditable y reproducible.
+model GroupDraw {
+  id           String   @id @default(cuid())
+  tournamentId String
+  seed         String /// semilla usada por el PRNG
+  strategy     String   @default("RANDOM")
+  /// Foto del resultado: [{ groupId, memberIds: [...] }]
+  result       Json
+  drawnById    String?
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  drawnBy    Users?     @relation(fields: [drawnById], references: [id], onDelete: SetNull)
+
+  @@index([tournamentId, createdAt])
+  @@map("group_draws")
+}
+
+model Registration {
+  id           String             @id @default(cuid())
+  tournamentId String
+  memberId     String
+  groupId      String?
+  /// Posición dentro del grupo (diana/petate)
+  position     Int?
+  status       RegistrationStatus @default(PENDING)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  tournament Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member     Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  group      TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  @@unique([tournamentId, memberId])
+  @@index([groupId])
+  @@map("registrations")
+}
+
+enum RegistrationStatus {
+  PENDING
+  CONFIRMED
+  WITHDRAWN
+}
