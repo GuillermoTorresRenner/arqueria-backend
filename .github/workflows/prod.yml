@@ -80,10 +80,20 @@ jobs:
             cd $PROJECT_PATH
 
             echo "DOCKERHUB_REPOSITORY=$DOCKERHUB_REPOSITORY" > .env
-            echo "${{ secrets.PROD_ENV_VARS }}" >> .env
+            # Heredoc con delimitador entre comillas: el secret se escribe tal
+            # cual. Con echo "..." bash ejecutaba las `comillas invertidas` y
+            # expandía los $ de los valores (contraseñas incluidas).
+            cat >> .env <<'ABMA_ENV_EOF'
+            ${{ secrets.PROD_ENV_VARS }}
+            ABMA_ENV_EOF
             chmod 600 .env
 
-            set -a; . ./.env; set +a
+            # Solo se leen las variables que usa este script. Cargar el .env
+            # entero con `source` fallaba con valores con espacios sin comillas
+            # (p. ej. un App Password de Gmail); docker compose sí los admite.
+            env_get() { grep -E "^$1=" .env | tail -n1 | cut -d= -f2- | sed -E "s/^[\"']//; s/[\"']$//"; }
+            POSTGRES_USER=$(env_get POSTGRES_USER)
+            DB_NAME=$(env_get DB_NAME)
 
             # El backend corre como uid 1001 (usuario nestjs)
             sudo chown -R 1001:1001 public || chown -R 1001:1001 public || true
