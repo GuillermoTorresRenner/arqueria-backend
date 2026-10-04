@@ -18,7 +18,7 @@ npm run start:dev                                 # http://localhost:4000/api
 ```
 
 Swagger en `http://localhost:4000/docs`.
-Admin del seed: `admin@galadhrym.cl` / `Galadhrym2026!` (cambiar en producción).
+Admin del seed: `torresrennerguillermo@gmail.com` / `7Elcarro` (cambiar en producción).
 
 ## Comandos
 

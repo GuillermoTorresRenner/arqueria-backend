@@ -54,6 +54,13 @@ const SECTIONS = [
           ],
         },
       },
+      {
+        // Vacía hasta que el admin suba fotos desde el panel; GalleryBlock no
+        // renderiza nada mientras no haya imágenes.
+        type: BlockType.GALLERY,
+        order: 2,
+        data: { title: 'El club en imágenes', images: [] },
+      },
     ],
   },
   {
@@ -94,13 +101,41 @@ const SECTIONS = [
 const CATEGORIES = [
   { kind: CategoryKind.DIVISION, code: 'RECURVO', label: 'Arco recurvo' },
   { kind: CategoryKind.DIVISION, code: 'COMPUESTO', label: 'Arco compuesto' },
-  { kind: CategoryKind.DIVISION, code: 'TRADICIONAL', label: 'Arco tradicional' },
+  {
+    kind: CategoryKind.DIVISION,
+    code: 'TRADICIONAL',
+    label: 'Arco tradicional',
+  },
   { kind: CategoryKind.GENDER, code: 'FEMENINO', label: 'Femenino' },
   { kind: CategoryKind.GENDER, code: 'MASCULINO', label: 'Masculino' },
-  { kind: CategoryKind.AGE, code: 'INFANTIL', label: 'Infantil', minAge: 0, maxAge: 13 },
-  { kind: CategoryKind.AGE, code: 'CADETE', label: 'Cadete', minAge: 14, maxAge: 17 },
-  { kind: CategoryKind.AGE, code: 'SENIOR', label: 'Senior', minAge: 18, maxAge: 49 },
-  { kind: CategoryKind.AGE, code: 'MASTER', label: 'Máster', minAge: 50, maxAge: 120 },
+  {
+    kind: CategoryKind.AGE,
+    code: 'INFANTIL',
+    label: 'Infantil',
+    minAge: 0,
+    maxAge: 13,
+  },
+  {
+    kind: CategoryKind.AGE,
+    code: 'CADETE',
+    label: 'Cadete',
+    minAge: 14,
+    maxAge: 17,
+  },
+  {
+    kind: CategoryKind.AGE,
+    code: 'SENIOR',
+    label: 'Senior',
+    minAge: 18,
+    maxAge: 49,
+  },
+  {
+    kind: CategoryKind.AGE,
+    code: 'MASTER',
+    label: 'Máster',
+    minAge: 50,
+    maxAge: 120,
+  },
 ];
 
 /// Formatos de ejemplo. Las modalidades reales del club están por definir:
@@ -108,7 +143,8 @@ const CATEGORIES = [
 const SCORING_FORMATS = [
   {
     name: 'WA 18m indoor',
-    description: 'Tiro al blanco bajo techo, 18 metros, 20 series de 3 flechas.',
+    description:
+      'Tiro al blanco bajo techo, 18 metros, 20 series de 3 flechas.',
     arrowsPerEnd: 3,
     endsPerRound: 20,
     maxPerArrow: 10,
@@ -144,8 +180,9 @@ const SCORING_FORMATS = [
 ];
 
 async function main() {
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@galadhrym.cl';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Galadhrym2026!';
+  const adminEmail =
+    process.env.SEED_ADMIN_EMAIL ?? 'torresrennerguillermo@gmail.com';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? '7Elcarro';
 
   const admin = await prisma.users.upsert({
     where: { email: adminEmail },
@@ -194,6 +231,32 @@ async function main() {
     });
   }
   console.log(`✓ ${SECTIONS.length} secciones de contenido`);
+
+  // Las secciones existentes no se tocan arriba, así que una instalación
+  // sembrada antes de que existiera la galería no la tendría. Se añade aquí
+  // si falta, sin pisar una galería que el admin ya haya llenado.
+  const home = await prisma.section.findUnique({ where: { key: 'home' } });
+  if (home) {
+    const gallery = await prisma.block.findFirst({
+      where: { sectionId: home.id, type: BlockType.GALLERY },
+    });
+    if (!gallery) {
+      const last = await prisma.block.findFirst({
+        where: { sectionId: home.id },
+        orderBy: { order: 'desc' },
+        select: { order: true },
+      });
+      await prisma.block.create({
+        data: {
+          sectionId: home.id,
+          type: BlockType.GALLERY,
+          order: (last?.order ?? -1) + 1,
+          data: { title: 'El club en imágenes', images: [] },
+        },
+      });
+      console.log('✓ Galería añadida al home');
+    }
+  }
 }
 
 main()

@@ -8,7 +8,12 @@
  *
  *   npm run seed:dev
  */
-import { PrismaClient, MemberStatus, Role, TournamentStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  MemberStatus,
+  Role,
+  TournamentStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
 
@@ -20,7 +25,7 @@ const PUBLIC_URL =
 
 const DEV_ADMIN = {
   email: 'torresrennerguillermo@gmail.com',
-  password: 'GuillermoTell',
+  password: '7Elcarro',
   name: 'Guillermo',
   surname: 'Torres',
 };
@@ -52,7 +57,9 @@ function seededRandom(seed: string) {
   let w = hash.readUInt32LE(12) || 4;
   return () => {
     const t = x ^ (x << 11);
-    x = y; y = z; z = w;
+    x = y;
+    y = z;
+    z = w;
     w = (w ^ (w >>> 19) ^ (t ^ (t >>> 8))) >>> 0;
     return w / 0x100000000;
   };
@@ -92,7 +99,9 @@ async function main() {
   console.log(`✓ Juez   ${judge.email}`);
 
   // ---- Socios ----
-  const categories = await prisma.category.findMany({ where: { isActive: true } });
+  const categories = await prisma.category.findMany({
+    where: { isActive: true },
+  });
   if (categories.length === 0) {
     throw new Error('No hay categorías. Ejecuta primero `npm run seed`.');
   }
@@ -126,7 +135,8 @@ async function main() {
   const format = await prisma.scoringFormat.findFirst({
     where: { name: 'WA 18m indoor' },
   });
-  if (!format) throw new Error('Falta el formato WA 18m. Ejecuta `npm run seed`.');
+  if (!format)
+    throw new Error('Falta el formato WA 18m. Ejecuta `npm run seed`.');
 
   const slug = 'torneo-demo-galadhrym';
   await prisma.tournament.deleteMany({ where: { slug } });
@@ -148,7 +158,12 @@ async function main() {
   console.log(`✓ Torneo "${tournament.name}" (público, en curso)`);
 
   const round = await prisma.round.create({
-    data: { tournamentId: tournament.id, name: 'Clasificatoria', order: 0, distance: 18 },
+    data: {
+      tournamentId: tournament.id,
+      name: 'Clasificatoria',
+      order: 0,
+      distance: 18,
+    },
   });
 
   // Inscripciones
@@ -202,7 +217,11 @@ async function main() {
   console.log(`✓ ${groups.length} grupos sorteados (juez asignado al Grupo A)`);
 
   // Puntajes: 6 series por arquero, con zonas verosímiles
-  const zones = format.zones as unknown as { label: string; value: number; isInner?: boolean }[];
+  const zones = format.zones as unknown as {
+    label: string;
+    value: number;
+    isInner?: boolean;
+  }[];
   const pickable = zones.filter((z) => z.value >= 6);
   let scoreCount = 0;
 
@@ -233,11 +252,15 @@ async function main() {
   console.log(`✓ ${scoreCount} series cargadas`);
 
   // ---- Carrusel de imágenes en el home ----
+  // Solo si no existe: las fotos que el admin sube desde el panel no deben
+  // desaparecer al volver a sembrar.
   const home = await prisma.section.findUnique({ where: { key: 'home' } });
-  if (home) {
-    await prisma.block.deleteMany({
+  const hasGallery =
+    home &&
+    (await prisma.block.count({
       where: { sectionId: home.id, type: 'GALLERY' },
-    });
+    })) > 0;
+  if (home && !hasGallery) {
     const lastOrder = await prisma.block.findFirst({
       where: { sectionId: home.id },
       orderBy: { order: 'desc' },
@@ -278,7 +301,7 @@ async function main() {
   console.log('Credenciales de desarrollo:');
   console.log(`  Admin  ${DEV_ADMIN.email} / ${DEV_ADMIN.password}`);
   console.log(`  Juez   ${DEV_JUDGE.email} / ${DEV_JUDGE.password}`);
-  console.log(`  Socios <nombre>@galadhrym.test / ${DEV_ADMIN.password}`);
+  console.log(`  Socios <nombre>@galadhrym.test / GuillermoTell`);
   console.log(`\n  Marcador: /torneos/${slug}`);
   console.log('────────────────────────────────────────');
   console.log('⚠️  Datos de prueba. No usar estas claves en producción.');

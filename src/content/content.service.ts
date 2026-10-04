@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ContentMediaService } from './content-media.service';
 import {
   CreateBlockDto,
   CreateSectionDto,
@@ -11,7 +12,10 @@ import {
 
 @Injectable()
 export class ContentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: ContentMediaService,
+  ) {}
 
   /// Vista pública: solo secciones y bloques activos, ya ordenados.
   /// Es el único endpoint que consume la landing.
@@ -79,9 +83,12 @@ export class ContentService {
   }
 
   async removeSection(id: string) {
-    await this.findSection(id);
+    const section = await this.findSection(id);
     // Los bloques caen por onDelete: Cascade
     await this.prisma.section.delete({ where: { id } });
+    await this.media.purge(
+      section.blocks.flatMap((b) => [...this.media.extractImages(b.data)]),
+    );
     return { message: 'Sección eliminada' };
   }
 
@@ -100,20 +107,31 @@ export class ContentService {
   }
 
   async updateBlock(id: string, dto: UpdateBlockDto) {
-    await this.findBlock(id);
+    const before = await this.findBlock(id);
     const { data, ...rest } = dto;
-    return this.prisma.block.update({
+    const updated = await this.prisma.block.update({
       where: { id },
       data: {
         ...rest,
         ...(data !== undefined ? { data: data as Prisma.InputJsonValue } : {}),
       },
     });
+
+    // Las imágenes que el bloque dejó de usar (reemplazadas o quitadas) se
+    // borran del disco si ningún otro bloque las referencia.
+    if (data !== undefined) {
+      const kept = this.media.extractImages(updated.data);
+      await this.media.purge(
+        [...this.media.extractImages(before.data)].filter((p) => !kept.has(p)),
+      );
+    }
+    return updated;
   }
 
   async removeBlock(id: string) {
-    await this.findBlock(id);
+    const block = await this.findBlock(id);
     await this.prisma.block.delete({ where: { id } });
+    await this.media.purge(this.media.extractImages(block.data));
     return { message: 'Bloque eliminado' };
   }
 
