@@ -1,15 +1,12 @@
-import { ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
+import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { IsBoolean, IsOptional } from 'class-validator';
 import { CreateUserDto } from './create-user.dto';
 
 /**
- * Actualización de usuario. La contraseña queda fuera a propósito: se cambia
- * por su propio endpoint (`PATCH /users/:id/password`), que exige la actual
- * cuando el usuario se edita a sí mismo.
+ * Actualización de usuario. Nunca incluye la contraseña: el usuario cambia la
+ * suya en PATCH /users/me/password o la recupera desde el correo.
  */
-export class UpdateUserDto extends PartialType(
-  OmitType(CreateUserDto, ['password'] as const),
-) {
+export class UpdateUserDto extends PartialType(CreateUserDto) {
   @ApiPropertyOptional({ description: 'Activa o desactiva la cuenta' })
   @IsOptional()
   @IsBoolean()

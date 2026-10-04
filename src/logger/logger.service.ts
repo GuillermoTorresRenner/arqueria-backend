@@ -10,7 +10,8 @@ export interface EmailLog {
     | 'welcome'
     | 'subscription_expiry_warning'
     | 'autoregister'
-    | 'join_welcome';
+    | 'join_welcome'
+    | 'account_invite';
   status: 'success' | 'error';
   userName?: string;
   customerName?: string;

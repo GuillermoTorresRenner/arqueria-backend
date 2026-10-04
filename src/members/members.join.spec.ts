@@ -31,7 +31,10 @@ describe('MembersService.join', () => {
         })),
       },
     };
-    auth = { createEmailVerificationToken: jest.fn().mockResolvedValue('tok') };
+    auth = {
+      create: jest.fn().mockResolvedValue('tok'),
+      validity: jest.fn(() => '7 días'),
+    };
     email = { sendJoinWelcomeEmail: jest.fn().mockResolvedValue(true) };
     service = new MembersService(prisma, auth, email);
   });
@@ -96,7 +99,7 @@ describe('MembersService.join', () => {
     });
     await expect(service.join(dto())).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.users.update).not.toHaveBeenCalled();
-    expect(auth.createEmailVerificationToken).not.toHaveBeenCalled();
+    expect(auth.create).not.toHaveBeenCalled();
   });
 
   it.each(['2030-01-01', '1850-01-01', '2024-01-01'])(

@@ -5,6 +5,3 @@
 export const WHATSAPP_GROUP_URL =
   process.env.WHATSAPP_GROUP_URL ||
   'https://chat.whatsapp.com/LkF1rxkIjBqL0qHTwA60au';
-
-/// Validez del enlace del correo para validar la cuenta y crear contraseña.
-export const EMAIL_VERIFICATION_TTL = '7d';

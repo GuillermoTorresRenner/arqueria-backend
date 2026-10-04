@@ -1,14 +1,13 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, Matches, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
-  @ApiPropertyOptional({
-    description:
-      'Contraseña actual. Obligatoria cuando el usuario cambia la suya; un ADMIN puede omitirla.',
+  @ApiProperty({
+    description: 'Contraseña actual (obligatoria, también para un ADMIN)',
   })
-  @IsOptional()
   @IsString()
-  currentPassword?: string;
+  @MinLength(1, { message: 'Debes indicar tu contraseña actual' })
+  currentPassword: string;
 
   @ApiProperty({ example: 'NuevaClave2026!' })
   @IsString()

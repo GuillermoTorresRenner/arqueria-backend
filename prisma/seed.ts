@@ -203,6 +203,7 @@ async function main() {
       surname: 'Galadhrym',
       userRoles: Role.ADMIN,
       emailVerified: true,
+      emailVerifiedAt: new Date(),
     },
   });
   console.log(`✓ Admin: ${admin.email}`);

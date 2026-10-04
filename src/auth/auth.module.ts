@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
+import { AccountTokensModule } from '../account-tokens/account-tokens.module';
 import { JwtModule } from '@nestjs/jwt';
 import { EmailModule } from '../email/email.module';
 import { LoggerModule } from '../logger/logger.module';
@@ -13,6 +14,7 @@ import { RoleGuard } from './guards/role.guard';
 @Module({
   imports: [
     UsersModule,
+    AccountTokensModule,
     EmailModule,
     LoggerModule,
     PrismaModule,

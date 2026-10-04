@@ -72,179 +72,133 @@ export class EmailService {
   }
 
   /**
-   * Envía un email de recuperación de contraseña
-   * @param to Email del destinatario
-   * @param resetToken Token de recuperación
-   * @param userName Nombre del usuario
+   * Envía un correo con el diseño del club y un botón hacia `actionUrl`
+   * (plantilla account-link). No lanza: devuelve si se pudo enviar, para que
+   * quien llama decida qué decir; el fallo queda en los logs.
    */
-  async sendPasswordResetEmail(
-    to: string,
-    resetToken: string,
-    userName: string,
-  ): Promise<void> {
-    try {
-      // Cargar el template - funciona tanto en desarrollo como en producción
-      let templatePath = path.join(
-        __dirname,
-        '../templates/email/password-reset.hbs',
-      );
-
-      // Si el archivo no existe (modo producción), buscar en la carpeta del proyecto
-      if (!fs.existsSync(templatePath)) {
-        templatePath = path.join(
-          process.cwd(),
-          'src/templates/email/password-reset.hbs',
-        );
-      }
-
-      const templateSource = fs.readFileSync(templatePath, 'utf-8');
-      const template = handlebars.compile(templateSource);
-
-      // URL del frontend para resetear contraseña
-      const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/change-password/${resetToken}`;
-
-      // Datos para el template
-      const companyName = process.env.COMPANY_NAME || 'Boilerplate';
-      const supportEmail = process.env.MAIL_FROM || 'support@example.com';
-      const templateData = {
-        userName,
-        resetUrl,
-        resetToken,
-        companyName,
-        currentYear: new Date().getFullYear(),
-        supportEmail,
-      };
-
-      // Generar HTML del template
-      const htmlContent = template(templateData);
-
-      // Configurar el email
-      const mailOptions = {
-        from: `"${companyName}" <${supportEmail}>`,
-        to,
-        subject: `Recuperación de Contraseña - ${companyName}`,
-        html: htmlContent,
-        text: `Hola ${userName},\n\nHas solicitado restablecer tu contraseña.\n\nUsa este enlace para crear una nueva contraseña: ${resetUrl}\n\nSi no solicitaste este cambio, puedes ignorar este email.\n\nSaludos,\nEquipo ${companyName}`,
-      };
-
-      // Enviar email
-      await this.transporter.sendMail(mailOptions);
-
-      // Log del envío exitoso
-      await this.loggerService.logEmailEvent({
-        email: to,
-        type: 'password_reset',
-        status: 'success',
-        userName,
-      });
-
-      console.log(`✅ Email de recuperación enviado a: ${to}`);
-    } catch (error) {
-      // Log del error
-      await this.loggerService.logEmailEvent({
-        email: to,
-        type: 'password_reset',
-        status: 'error',
-        userName,
-        error: error.message,
-      });
-
-      console.error('❌ Error enviando email de recuperación:', error);
-      throw new Error('No se pudo enviar el email de recuperación');
-    }
-  }
-
-  /**
-   * Envía un email de bienvenida al usuario
-   * @param to Email del destinatario
-   * @param userName Nombre del usuario
-   * @param companyName Nombre de la empresa
-   */
-  /**
-   * Correo de bienvenida tras crear una cuenta.
-   *
-   * No lanza si el envío falla: que el SMTP esté caído no debe impedir crear
-   * el usuario. El fallo queda registrado en los logs.
-   */
-  async sendWelcomeEmail(params: {
+  private async sendAccountLinkEmail(params: {
     to: string;
-    name?: string | null;
-    surname?: string | null;
-    phone?: string | null;
-    role?: string;
+    logType: 'account_invite' | 'password_reset';
+    subject: string;
+    preheader: string;
+    heading: string;
+    paragraphs: string[];
+    buttonLabel: string;
+    actionUrl: string;
+    validity: string;
+    ignoreNote?: string;
+    userName: string;
   }): Promise<boolean> {
-    const { to, name, surname, phone, role = 'MEMBER' } = params;
     const brand = this.brand();
-
-    const ROLE_LABELS: Record<string, string> = {
-      ADMIN: 'Administrador',
-      JUDGE: 'Juez',
-      MEMBER: 'Socio',
-    };
-
-    const fullName = [name, surname].filter(Boolean).join(' ') || to;
-
     try {
-      const html = this.renderTemplate('welcome', {
-        ...brand,
-        firstName: name || 'arquero',
-        fullName,
-        email: to,
-        phone: phone || '',
-        roleLabel: ROLE_LABELS[role] ?? role,
-        isAdmin: role === 'ADMIN',
-        isJudge: role === 'JUDGE',
-        isMember: role === 'MEMBER',
-        loginUrl: `${brand.frontendUrl}/login`,
-      });
-
+      const html = this.renderTemplate('account-link', { ...brand, ...params });
       await this.transporter.sendMail({
         from: `"${brand.companyName}" <${brand.supportEmail}>`,
-        to,
-        subject: `¡Bienvenido a ${brand.companyName}!`,
+        to: params.to,
+        subject: params.subject,
         html,
-        // Alternativa en texto plano: algunos clientes la prefieren y evita
-        // que el correo puntúe como spam.
         text: [
-          `¡Te damos la bienvenida, ${name || 'arquero'}!`,
+          params.heading,
           '',
-          `Tu cuenta en ${brand.companyName} ya está activa.`,
+          ...params.paragraphs,
           '',
-          `Nombre: ${fullName}`,
-          `Correo: ${to}`,
-          phone ? `Teléfono: ${phone}` : '',
-          `Perfil: ${ROLE_LABELS[role] ?? role}`,
-          '',
-          `Accede en: ${brand.frontendUrl}/login`,
-          brand.whatsappUrl ? `Grupo de WhatsApp: ${brand.whatsappUrl}` : '',
-          '',
-          `¿Dudas? Escríbenos a ${brand.supportEmail}`,
+          `${params.buttonLabel}: ${params.actionUrl}`,
+          `El enlace vale ${params.validity} y sirve una sola vez.`,
+          params.ignoreNote ?? '',
         ]
-          .filter(Boolean)
+          .filter((line, i, all) => line !== '' || all[i - 1] !== '')
           .join('\n'),
       });
-
       await this.loggerService.logEmailEvent({
-        email: to,
-        type: 'welcome',
+        email: params.to,
+        type: params.logType,
         status: 'success',
-        userName: fullName,
+        userName: params.userName,
       });
       return true;
     } catch (error) {
       await this.loggerService.logEmailEvent({
-        email: to,
-        type: 'welcome',
+        email: params.to,
+        type: params.logType,
         status: 'error',
-        userName: fullName,
+        userName: params.userName,
         error: error.message,
       });
       console.error(
-        `No se pudo enviar el email de bienvenida a ${to}:`,
+        `No se pudo enviar el correo a ${params.to}:`,
         error.message,
       );
       return false;
     }
+  }
+
+  /// El token va en el fragmento (#): no viaja al servidor del frontend ni
+  /// queda en sus logs de acceso.
+  private linkTo(path: string, token: string) {
+    return `${this.brand().frontendUrl}${path}#token=${encodeURIComponent(token)}`;
+  }
+
+  /**
+   * Invitación a una cuenta creada desde el panel (admin, juez o socio): el
+   * enlace lleva a crear la contraseña. Nadie la elige por el usuario.
+   */
+  sendAccountInviteEmail(params: {
+    to: string;
+    name?: string | null;
+    role: string;
+    token: string;
+    validity: string;
+  }) {
+    const { companyName } = this.brand();
+    const ROLE_LABELS: Record<string, string> = {
+      ADMIN: 'administrador',
+      JUDGE: 'juez de eventos',
+      MEMBER: 'socio',
+    };
+    const name = params.name || 'arquero';
+    return this.sendAccountLinkEmail({
+      to: params.to,
+      logType: 'account_invite',
+      userName: name,
+      subject: `Te damos acceso a ${companyName}`,
+      preheader: `Crea tu contraseña para entrar a ${companyName}.`,
+      heading: `¡Hola, ${name}!`,
+      paragraphs: [
+        `Te creamos una cuenta en ${companyName} como ${ROLE_LABELS[params.role] ?? params.role}.`,
+        'Para activarla, crea tu contraseña desde el siguiente enlace. Con ella podrás entrar al sitio del club.',
+      ],
+      buttonLabel: 'Crear mi contraseña',
+      actionUrl: this.linkTo('/bienvenida', params.token),
+      validity: params.validity,
+    });
+  }
+
+  /** Recuperación de contraseña: enlace para elegir una nueva. */
+  sendPasswordResetEmail(params: {
+    to: string;
+    name?: string | null;
+    token: string;
+    validity: string;
+  }) {
+    const { companyName } = this.brand();
+    const name = params.name || 'arquero';
+    return this.sendAccountLinkEmail({
+      to: params.to,
+      logType: 'password_reset',
+      userName: name,
+      subject: `Recupera tu contraseña de ${companyName}`,
+      preheader: 'Enlace para elegir una contraseña nueva.',
+      heading: `Hola, ${name}`,
+      paragraphs: [
+        `Recibimos una solicitud para cambiar la contraseña de tu cuenta en ${companyName}.`,
+        'Elige una nueva desde el siguiente enlace.',
+      ],
+      buttonLabel: 'Elegir contraseña nueva',
+      actionUrl: this.linkTo('/restablecer', params.token),
+      validity: params.validity,
+      ignoreNote:
+        'Si no lo pediste tú, ignora este correo: tu contraseña actual sigue siendo válida.',
+    });
   }
 
   /**
@@ -256,20 +210,18 @@ export class EmailService {
     to: string;
     name: string;
     verifyToken: string;
-    validDays: number;
+    validity: string;
   }): Promise<boolean> {
-    const { to, name, verifyToken, validDays } = params;
+    const { to, name, verifyToken, validity } = params;
     const brand = { ...this.brand(), whatsappUrl: WHATSAPP_GROUP_URL };
-    // El token va en el fragmento (#), no en la query: así no viaja al
-    // servidor del frontend ni queda en sus logs de acceso.
-    const verifyUrl = `${brand.frontendUrl}/bienvenida#token=${encodeURIComponent(verifyToken)}`;
+    const verifyUrl = this.linkTo('/bienvenida', verifyToken);
 
     try {
       const html = this.renderTemplate('join-welcome', {
         ...brand,
         firstName: name,
         verifyUrl,
-        validDays,
+        validity,
       });
       await this.transporter.sendMail({
         from: `"${brand.companyName}" <${brand.supportEmail}>`,
@@ -283,7 +235,7 @@ export class EmailService {
           'valida tu correo y crea tu contraseña en este enlace:',
           verifyUrl,
           '',
-          `El enlace vale ${validDays} días y sirve una sola vez.`,
+          `El enlace vale ${validity} y sirve una sola vez.`,
           '',
           `Grupo de WhatsApp del club: ${brand.whatsappUrl}`,
           '',

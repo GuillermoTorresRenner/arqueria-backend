@@ -11,6 +11,8 @@ model Users {
   avatar         String?
   isActive       Boolean   @default(true)
   emailVerified  Boolean   @default(false)
+  /// Cuándo confirmó su correo (al crear su contraseña desde el enlace del email)
+  emailVerifiedAt  DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

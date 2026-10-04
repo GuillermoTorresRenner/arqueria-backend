@@ -182,7 +182,7 @@ export class UsersController {
   ) {
     // Se pasa el rol del propio usuario: aunque sea ADMIN, al cambiar SU clave
     // se le sigue exigiendo la actual.
-    return this.usersService.changePassword(user.userID, dto, user.role);
+    return this.usersService.changeOwnPassword(user.userID, dto);
   }
 
   @Get(':id')
@@ -218,18 +218,17 @@ export class UsersController {
     return this.usersService.updateUserData(id, updateUserDto, avatar);
   }
 
-  @Patch(':id/password')
+  /// El admin no fija contraseñas ajenas: envía al usuario un enlace (la
+  /// invitación si no activó su cuenta, o uno de recuperación si ya lo hizo).
+  @Post(':id/access-email')
   @Auth([Roles.ADMIN])
   @ApiOperation({
-    summary: 'Restablecer la contraseña de un usuario',
-    description: 'Un ADMIN no necesita indicar la contraseña actual.',
+    summary: 'Enviar correo de acceso',
+    description:
+      'Reenvía la invitación (cuenta sin activar) o envía un enlace de recuperación (cuenta activa). La contraseña la elige siempre el usuario.',
   })
-  changePassword(
-    @Param('id') id: string,
-    @Body() dto: ChangePasswordDto,
-    @ActiveUser() requester: ActiveUserData,
-  ) {
-    return this.usersService.changePassword(id, dto, requester.role);
+  sendAccessEmail(@Param('id') id: string) {
+    return this.usersService.sendAccessEmail(id);
   }
 
   @Delete(':id')

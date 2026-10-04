@@ -82,6 +82,7 @@ async function upsertUser(
       surname: data.surname,
       userRoles: role,
       emailVerified: true,
+      emailVerifiedAt: new Date(),
     },
   });
 }

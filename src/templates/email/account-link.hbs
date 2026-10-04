@@ -2,7 +2,7 @@
   <head>
     <meta charset='utf-8' />
     <meta name='viewport' content='width=device-width, initial-scale=1' />
-    <title>Valida tu correo · {{companyName}}</title>
+    <title>{{subject}}</title>
   </head>
   <!--
     Email HTML: tablas y estilos en línea a propósito. Los clientes de correo
@@ -12,8 +12,7 @@
   <body style='margin:0;padding:0;background-color:#f2ece0;'>
     <!-- Texto de vista previa: lo que se lee en la bandeja antes de abrir -->
     <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
-      Valida tu correo para activar tu cuenta en
-      {{companyName}}.
+      {{preheader}}
     </div>
 
     <table
@@ -62,23 +61,15 @@
                 <h1
                   style='margin:0 0 16px;font-size:22px;font-weight:bold;color:#1f1710;'
                 >
-                  ¡Gracias por sumarte,
-                  {{firstName}}!
+                  {{heading}}
                 </h1>
-                <p
-                  style='margin:0 0 14px;font-size:15px;line-height:1.65;color:#4a3a2a;'
-                >
-                  Recibimos tu inscripción en
-                  <strong>{{companyName}}</strong>. Para activar tu cuenta,
-                  valida tu correo y crea tu contraseña: con ella podrás entrar
-                  al sitio del club.
-                </p>
-                <p
-                  style='margin:0 0 14px;font-size:15px;line-height:1.65;color:#4a3a2a;'
-                >
-                  Muy pronto encontrarás allí el calendario de actividades y las
-                  inscripciones a los torneos.
-                </p>
+                {{#each paragraphs}}
+                  <p
+                    style='margin:0 0 14px;font-size:15px;line-height:1.65;color:#4a3a2a;'
+                  >
+                    {{this}}
+                  </p>
+                {{/each}}
               </td>
             </tr>
 
@@ -86,16 +77,16 @@
             <tr>
               <td style='padding:20px 32px 6px;text-align:center;'>
                 <a
-                  href='{{verifyUrl}}'
+                  href='{{actionUrl}}'
                   style='display:inline-block;background-color:#a81e24;color:#fff8ee;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;'
                 >
-                  Validar mi correo
+                  {{buttonLabel}}
                 </a>
               </td>
             </tr>
             <tr>
               <td
-                style='padding:6px 32px 18px;text-align:center;font-family:Arial,sans-serif;'
+                style='padding:6px 32px 26px;text-align:center;font-family:Arial,sans-serif;'
               >
                 <p
                   style='margin:0;font-size:12px;line-height:1.6;color:#8a7a63;'
@@ -105,30 +96,19 @@
                   y sirve una sola vez. Si el botón no funciona, copia esta
                   dirección en tu navegador:<br />
                   <a
-                    href='{{verifyUrl}}'
+                    href='{{actionUrl}}'
                     style='color:#a81e24;word-break:break-all;'
-                  >{{verifyUrl}}</a>
+                  >{{actionUrl}}</a>
                 </p>
+                {{#if ignoreNote}}
+                  <p
+                    style='margin:12px 0 0;font-size:12px;line-height:1.6;color:#8a7a63;'
+                  >
+                    {{ignoreNote}}
+                  </p>
+                {{/if}}
               </td>
             </tr>
-
-            {{#if whatsappUrl}}
-              <tr>
-                <td
-                  style='padding:6px 32px 28px;text-align:center;font-family:Arial,sans-serif;'
-                >
-                  <p style='margin:0 0 10px;font-size:14px;color:#4a3a2a;'>
-                    Y si aún no entraste, este es el grupo del club:
-                  </p>
-                  <a
-                    href='{{whatsappUrl}}'
-                    style='display:inline-block;border:1px solid #8b5e34;color:#6b4a28;font-size:14px;text-decoration:none;padding:10px 22px;border-radius:8px;'
-                  >
-                    Entrar al grupo de WhatsApp
-                  </a>
-                </td>
-              </tr>
-            {{/if}}
 
             <!-- Pie -->
             <tr>
@@ -143,13 +123,6 @@
                     href='mailto:{{supportEmail}}'
                     style='color:#a81e24;text-decoration:none;'
                   >{{supportEmail}}</a>
-                </p>
-                <p
-                  style='margin:0 0 6px;font-size:11px;line-height:1.6;color:#8a7a63;'
-                >
-                  Recibes este correo porque te inscribiste en
-                  {{companyName}}
-                  y aceptaste recibir comunicaciones del club por email.
                 </p>
                 <p style='margin:0;font-size:11px;color:#8a7a63;'>
                   ©

@@ -8,7 +8,7 @@ import { MemberStatus, Prisma, Role } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthService } from '../auth/auth.service';
+import { AccountTokensService } from '../account-tokens/account-tokens.service';
 import { EmailService } from '../email/email.service';
 import { WHATSAPP_GROUP_URL } from '../config/club';
 import {
@@ -20,14 +20,11 @@ import {
   UpdateMemberDto,
 } from './dto';
 
-/// Días de validez del enlace del correo (coherente con EMAIL_VERIFICATION_TTL).
-const VERIFICATION_DAYS = 7;
-
 @Injectable()
 export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly authService: AuthService,
+    private readonly accountTokens: AccountTokensService,
     private readonly emailService: EmailService,
   ) {}
 
@@ -111,13 +108,12 @@ export class MembersService {
       throw error;
     }
 
-    const verifyToken =
-      await this.authService.createEmailVerificationToken(user);
+    const verifyToken = await this.accountTokens.create(user, 'activation');
     result.emailSent = await this.emailService.sendJoinWelcomeEmail({
       to: user.email,
       name: dto.name,
       verifyToken,
-      validDays: VERIFICATION_DAYS,
+      validity: this.accountTokens.validity('activation'),
     });
     return result;
   }

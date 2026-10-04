@@ -18,6 +18,8 @@ import * as bcrypt from 'bcrypt';
 import { UploadService } from '../upload/upload.service';
 import { EmailService } from '../email/email.service';
 import { buildUserAvatarUrl } from './user.helper';
+import { AccountTokensService } from '../account-tokens/account-tokens.service';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class UsersService {
@@ -26,6 +28,7 @@ export class UsersService {
     private readonly loggerService: LoggerService,
     private readonly uploadService: UploadService,
     private readonly emailService: EmailService,
+    private readonly accountTokens: AccountTokensService,
   ) {}
 
   async register(createUserDto: CreateUserDto, avatar?: Express.Multer.File) {
@@ -33,7 +36,12 @@ export class UsersService {
       const userExists = await this.findByEmail(createUserDto.email);
       if (userExists) throw new BadRequestException('El usuario ya existe');
 
-      const hashedPassword = bcrypt.hashSync(createUserDto.password, 10);
+      // Nadie elige la contraseña por el usuario: se crea con una aleatoria
+      // que nadie conoce y el usuario fija la suya desde el correo.
+      const hashedPassword = await bcrypt.hash(
+        randomBytes(32).toString('hex'),
+        10,
+      );
 
       // Roles ya es el enum de Prisma: no hace falta mapear nada.
       const user = await this.prismaService.users.create({
@@ -70,18 +78,12 @@ export class UsersService {
         description: `Usuario: ${user.name} ${user.surname}, Email: ${user.email}, Rol: ${createUserDto.role}`,
       });
 
-      // El correo se envía sin bloquear ni romper el alta: si el SMTP falla,
-      // el usuario ya está creado y el fallo queda en los logs.
-      await this.emailService.sendWelcomeEmail({
-        to: user.email,
-        name: user.name,
-        surname: user.surname,
-        phone: user.phone,
-        role: user.userRoles,
-      });
+      // Invitación con el enlace para crear la contraseña. No rompe el alta si
+      // el SMTP falla: el admin puede reenviarla desde el panel.
+      const emailSent = await this.sendInvite(user);
 
       // Nunca devolver el hash de la contraseña ni el refreshToken.
-      return this.formatUserResponse(user);
+      return { ...this.formatUserResponse(user), emailSent };
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw new InternalServerErrorException({
@@ -249,6 +251,7 @@ export class UsersService {
       avatar: buildUserAvatarUrl(user.avatar),
       isActive: user.isActive,
       emailVerified: user.emailVerified,
+      emailVerifiedAt: user.emailVerifiedAt ?? null,
       lastConnection: user.lastConnection,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -259,22 +262,51 @@ export class UsersService {
    * Cambia la contraseña. Si quien la cambia no es ADMIN, debe acreditar la
    * actual: sin eso, una sesión robada permitiría tomar la cuenta.
    */
-  async changePassword(
-    id: string,
-    dto: ChangePasswordDto,
-    requesterRole: Roles,
-  ) {
-    const user = await this.prismaService.users.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('Usuario no encontrado');
+  private async sendInvite(user: {
+    id: string;
+    email: string;
+    password: string;
+    name: string | null;
+    userRoles: string;
+  }) {
+    return this.emailService.sendAccountInviteEmail({
+      to: user.email,
+      name: user.name,
+      role: user.userRoles,
+      token: await this.accountTokens.create(user, 'activation'),
+      validity: this.accountTokens.validity('activation'),
+    });
+  }
 
-    if (requesterRole !== Roles.ADMIN) {
-      if (!dto.currentPassword) {
-        throw new BadRequestException('Debes indicar tu contraseña actual');
-      }
-      const valid = await bcrypt.compare(dto.currentPassword, user.password);
-      if (!valid) {
-        throw new BadRequestException('La contraseña actual no es correcta');
-      }
+  /**
+   * «Enviar correo de acceso» desde el panel: si la cuenta aún no se activó,
+   * reenvía la invitación; si ya está activa, manda un enlace de recuperación.
+   * El admin nunca ve ni elige la contraseña.
+   */
+  async sendAccessEmail(id: string) {
+    const user = await this.findById(id);
+    if (!user.isActive) {
+      throw new BadRequestException('La cuenta está desactivada');
+    }
+    if (!user.emailVerified) {
+      return { kind: 'invite' as const, sent: await this.sendInvite(user) };
+    }
+    const sent = await this.emailService.sendPasswordResetEmail({
+      to: user.email,
+      name: user.name,
+      token: await this.accountTokens.create(user, 'password_reset'),
+      validity: this.accountTokens.validity('password_reset'),
+    });
+    return { kind: 'password_reset' as const, sent };
+  }
+
+  /// Cambio de la contraseña propia: siempre exige la actual, también a un
+  /// admin. Las de otros no se cambian: se recuperan desde el correo.
+  async changeOwnPassword(id: string, dto: ChangePasswordDto) {
+    const user = await this.findById(id);
+    const valid = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!valid) {
+      throw new BadRequestException('La contraseña actual no es correcta');
     }
 
     await this.prismaService.users.update({
