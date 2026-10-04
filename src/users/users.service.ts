@@ -78,8 +78,9 @@ export class UsersService {
         description: `Usuario: ${user.name} ${user.surname}, Email: ${user.email}, Rol: ${createUserDto.role}`,
       });
 
-      // Invitación con el enlace para crear la contraseña. No rompe el alta si
-      // el SMTP falla: el admin puede reenviarla desde el panel.
+      // Invitación con el enlace para crear la contraseña. Sale sola al crear
+      // la cuenta; no rompe el alta si el SMTP falla. Si se pierde o caduca,
+      // el usuario pide otro enlace en «¿Olvidaste tu contraseña?».
       const emailSent = await this.sendInvite(user);
 
       // Nunca devolver el hash de la contraseña ni el refreshToken.
@@ -276,28 +277,6 @@ export class UsersService {
       token: await this.accountTokens.create(user, 'activation'),
       validity: this.accountTokens.validity('activation'),
     });
-  }
-
-  /**
-   * «Enviar correo de acceso» desde el panel: si la cuenta aún no se activó,
-   * reenvía la invitación; si ya está activa, manda un enlace de recuperación.
-   * El admin nunca ve ni elige la contraseña.
-   */
-  async sendAccessEmail(id: string) {
-    const user = await this.findById(id);
-    if (!user.isActive) {
-      throw new BadRequestException('La cuenta está desactivada');
-    }
-    if (!user.emailVerified) {
-      return { kind: 'invite' as const, sent: await this.sendInvite(user) };
-    }
-    const sent = await this.emailService.sendPasswordResetEmail({
-      to: user.email,
-      name: user.name,
-      token: await this.accountTokens.create(user, 'password_reset'),
-      validity: this.accountTokens.validity('password_reset'),
-    });
-    return { kind: 'password_reset' as const, sent };
   }
 
   /// Cambio de la contraseña propia: siempre exige la actual, también a un

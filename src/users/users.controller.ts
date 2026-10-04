@@ -218,19 +218,6 @@ export class UsersController {
     return this.usersService.updateUserData(id, updateUserDto, avatar);
   }
 
-  /// El admin no fija contraseñas ajenas: envía al usuario un enlace (la
-  /// invitación si no activó su cuenta, o uno de recuperación si ya lo hizo).
-  @Post(':id/access-email')
-  @Auth([Roles.ADMIN])
-  @ApiOperation({
-    summary: 'Enviar correo de acceso',
-    description:
-      'Reenvía la invitación (cuenta sin activar) o envía un enlace de recuperación (cuenta activa). La contraseña la elige siempre el usuario.',
-  })
-  sendAccessEmail(@Param('id') id: string) {
-    return this.usersService.sendAccessEmail(id);
-  }
-
   @Delete(':id')
   @Auth([Roles.ADMIN])
   @ApiOperation({
