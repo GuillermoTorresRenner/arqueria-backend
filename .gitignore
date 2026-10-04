@@ -8,3 +8,6 @@ public/documents/*
 public/users_avatar/*
 public/content/*
 !public/**/.gitkeep
+
+# Valores reales locales (p. ej. .env.secrets.local): nunca al repo
+.env*.local

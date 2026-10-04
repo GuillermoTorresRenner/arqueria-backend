@@ -1,6 +1,8 @@
 import { Controller, Post, Body, Get } from '@nestjs/common';
 import { EmailService } from './email.service';
 import { SendPasswordResetDto } from './dto/email.dto';
+import { Auth } from '../auth/decorators/auth.decorator';
+import { Roles } from '../auth/roles.enum';
 
 @Controller('email')
 export class EmailController {
@@ -9,7 +11,10 @@ export class EmailController {
   /**
    * Endpoint para probar el envío de email de recuperación de contraseña
    */
+  // Solo ADMIN: público, dejaba a cualquiera enviar correos con la cuenta del
+  // club a cualquier dirección y exponía los errores del SMTP.
   @Post('test/password-reset')
+  @Auth([Roles.ADMIN])
   async testPasswordReset(@Body() dto: SendPasswordResetDto) {
     try {
       // Generar un token de prueba
@@ -40,6 +45,7 @@ export class EmailController {
    * Verifica la conexión SMTP
    */
   @Get('test/connection')
+  @Auth([Roles.ADMIN])
   async testConnection() {
     try {
       const isConnected = await this.emailService.verifyConnection();

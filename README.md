@@ -18,7 +18,9 @@ npm run start:dev                                 # http://localhost:4000/api
 ```
 
 Swagger en `http://localhost:4000/docs`.
-Admin del seed: `torresrennerguillermo@gmail.com` / `7Elcarro` (cambiar en producción).
+Admin del seed: `torresrennerguillermo@gmail.com`. Su contraseña **no está en el repo**:
+defínela en `SEED_ADMIN_PASSWORD` (en tu `.env` local, o en el secret del entorno) antes del
+primer `npm run seed`; sin ella el seed se niega a crear el admin.
 
 ## Comandos
 
@@ -43,7 +45,7 @@ credenciales son públicas y débiles a propósito, para entrar rápido en local
 
 | Rol | Correo | Clave |
 |---|---|---|
-| Admin | `torresrennerguillermo@gmail.com` | `GuillermoTell` |
+| Admin | `torresrennerguillermo@gmail.com` | `SEED_ADMIN_PASSWORD`, o `GuillermoTell` si no está definida |
 | Juez | `juez@galadhrym.cl` | `GuillermoTell` |
 | Socios | `<nombre>@galadhrym.test` | `GuillermoTell` |
 

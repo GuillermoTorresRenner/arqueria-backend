@@ -25,7 +25,9 @@ const PUBLIC_URL =
 
 const DEV_ADMIN = {
   email: 'torresrennerguillermo@gmail.com',
-  password: '7Elcarro',
+  // La clave real de tu admin local va en SEED_ADMIN_PASSWORD (.env, ignorado);
+  // el fallback es la clave pública de desarrollo, nunca una real.
+  password: process.env.SEED_ADMIN_PASSWORD ?? 'GuillermoTell',
   name: 'Guillermo',
   surname: 'Torres',
 };
