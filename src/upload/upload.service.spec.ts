@@ -5,6 +5,21 @@ import * as sharp from 'sharp';
 import { BadRequestException } from '@nestjs/common';
 import { MAX_IMAGE_SIDE, UploadService } from './upload.service';
 
+async function waitForDir(dir: string, timeoutMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (
+      await fs.stat(dir).then(
+        () => true,
+        () => false,
+      )
+    )
+      return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`No apareció ${dir}`);
+}
+
 describe('UploadService.convertToWebp', () => {
   let tmp: string;
   let service: UploadService;
@@ -16,6 +31,9 @@ describe('UploadService.convertToWebp', () => {
     jest.spyOn(process, 'cwd').mockReturnValue(tmp);
     await fs.mkdir(path.join(tmp, 'public', 'images'), { recursive: true });
     service = new UploadService({ log: jest.fn() } as any);
+    // El constructor crea sus carpetas sin esperar: hay que dejar que termine
+    // antes de que afterEach borre el temporal (si no, ENOTEMPTY en CI).
+    await waitForDir(path.join(tmp, 'public', 'content'));
   });
 
   afterEach(async () => {

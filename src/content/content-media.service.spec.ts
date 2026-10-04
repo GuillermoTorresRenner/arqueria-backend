@@ -1,7 +1,6 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { UploadService } from '../upload/upload.service';
 import { ContentMediaService } from './content-media.service';
 
 describe('ContentMediaService', () => {
@@ -22,8 +21,14 @@ describe('ContentMediaService', () => {
     const prisma = {
       block: { findMany: jest.fn(async () => blocks) },
     };
-    const upload = new UploadService({ log: jest.fn() } as any);
-    service = new ContentMediaService(prisma as any, upload);
+    // removeFile falso con la misma semántica (ruta relativa a public/). El
+    // UploadService real crea carpetas de forma asíncrona en su constructor,
+    // y eso compite con el borrado del temporal en afterEach.
+    const upload = {
+      removeFile: (relativePath: string) =>
+        fs.unlink(path.join(tmp, 'public', relativePath)),
+    };
+    service = new ContentMediaService(prisma as any, upload as any);
   });
 
   afterEach(async () => {
