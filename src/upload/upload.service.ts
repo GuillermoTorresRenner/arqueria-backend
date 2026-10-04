@@ -6,6 +6,10 @@ import { LoggerService } from '../logger/logger.service';
 
 import * as sharp from 'sharp';
 
+/// Lado máximo (px) de las imágenes de contenido. Cubre un hero a pantalla
+/// completa en monitores grandes sin servir el original de la cámara.
+export const MAX_IMAGE_SIDE = 2400;
+
 @Injectable()
 export class UploadService {
   private readonly imagesPath = path.join(process.cwd(), 'public', 'images');
@@ -19,11 +23,6 @@ export class UploadService {
     'public',
     'users_avatar',
   );
-  private readonly companyAvatarPath = path.join(
-    process.cwd(),
-    'public',
-    'company_avatar',
-  );
   private readonly contentPath = path.join(process.cwd(), 'public', 'content');
 
   // Carpetas permitidas para subir archivos
@@ -31,7 +30,6 @@ export class UploadService {
     'images',
     'documents',
     'users_avatar',
-    'company_avatar',
     'content',
   ]);
 
@@ -48,7 +46,6 @@ export class UploadService {
       await fs.mkdir(this.imagesPath, { recursive: true });
       await fs.mkdir(this.documentsPath, { recursive: true });
       await fs.mkdir(this._usersAvatarPath, { recursive: true });
-      await fs.mkdir(this.companyAvatarPath, { recursive: true });
       await fs.mkdir(this.contentPath, { recursive: true });
     } catch (error) {
       console.error('Error creating directories:', error);
@@ -80,16 +77,18 @@ export class UploadService {
       const filename = `${uniqueId}.webp`;
       const outputPath = path.join(this.imagesPath, filename);
 
-      const sharpInstance = sharp(file.buffer);
-
-      if (options?.width || options?.height) {
-        sharpInstance.resize(options.width, options.height, {
-          fit: 'inside',
-          withoutEnlargement: true,
-        });
-      }
-
-      await sharpInstance
+      // rotate() sin argumentos aplica la orientación EXIF: las fotos de móvil
+      // vienen giradas en los píxeles y solo la etiqueta las endereza. El WebP
+      // de salida no conserva metadatos, así que sin esto quedarían de lado.
+      // Sin medidas explícitas se acota al MAX_IMAGE_SIDE para que una foto de
+      // 12 MP no se sirva tal cual en la landing.
+      await sharp(file.buffer)
+        .rotate()
+        .resize(
+          options?.width ?? (options?.height ? undefined : MAX_IMAGE_SIDE),
+          options?.height ?? (options?.width ? undefined : MAX_IMAGE_SIDE),
+          { fit: 'inside', withoutEnlargement: true },
+        )
         .webp({ quality: options?.quality || 80 })
         .toFile(outputPath);
 
@@ -190,54 +189,6 @@ export class UploadService {
     } catch (error) {
       throw new BadRequestException(
         `Error al procesar el avatar de usuario: ${error.message}`,
-      );
-    }
-  }
-
-  /**
-   * Convierte y guarda un avatar de compañía en formato WebP optimizado
-   */
-  async convertToCompanyAvatar(
-    file: Express.Multer.File,
-    companyId?: string,
-  ): Promise<string> {
-    if (!file) {
-      throw new BadRequestException('No se ha proporcionado ningún archivo');
-    }
-
-    if (!file.mimetype.startsWith('image/')) {
-      throw new BadRequestException('El archivo debe ser una imagen');
-    }
-
-    try {
-      const uniqueId = companyId
-        ? `company_${companyId}`
-        : `company_${nanoid(12)}`;
-      const filename = `${uniqueId}.webp`;
-      const outputPath = path.join(this.companyAvatarPath, filename);
-
-      await sharp(file.buffer)
-        .resize(200, 200, {
-          fit: 'cover',
-          position: 'center',
-        })
-        .webp({ quality: 90, effort: 6 })
-        .toFile(outputPath);
-
-      const relativePath = `company_avatar/${filename}`;
-
-      await this.loggerService.log({
-        level: 'INFO',
-        message: 'Avatar de compañía subido',
-        action: 'UPLOAD_COMPANY_AVATAR',
-        entityType: 'File',
-        entityId: relativePath,
-      });
-
-      return relativePath;
-    } catch (error) {
-      throw new BadRequestException(
-        `Error al procesar el avatar de compañía: ${error.message}`,
       );
     }
   }

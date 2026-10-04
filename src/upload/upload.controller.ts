@@ -4,10 +4,11 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  NotFoundException,
   Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { UploadService } from './upload.service';
+import { MAX_IMAGE_SIDE, UploadService } from './upload.service';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { Auth } from '../auth/decorators/auth.decorator';
 import {
@@ -15,6 +16,14 @@ import {
   ActiveUserData,
 } from '../auth/decorators/activeUser.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { Roles } from '../auth/roles.enum';
+
+/// Convierte un query param numérico y lo acota a [1, max]. Un valor ausente o
+/// no numérico devuelve undefined para que el servicio use su valor por defecto.
+function parseBound(value: string | undefined, max: number) {
+  const n = value ? parseInt(value, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, max) : undefined;
+}
 
 @ApiTags('Upload - Gestión de Archivos')
 @Controller('upload')
@@ -25,7 +34,7 @@ export class UploadController {
   ) {}
 
   @Post('image')
-  @Auth()
+  @Auth([Roles.ADMIN])
   @ApiBearerAuth()
   @UseInterceptors(
     FileInterceptor('file', {
@@ -68,9 +77,9 @@ export class UploadController {
     }
 
     const options = {
-      width: width ? parseInt(width) : undefined,
-      height: height ? parseInt(height) : undefined,
-      quality: quality ? parseInt(quality) : 80,
+      width: parseBound(width, MAX_IMAGE_SIDE),
+      height: parseBound(height, MAX_IMAGE_SIDE),
+      quality: parseBound(quality, 100) ?? 80,
     };
 
     const relativePath = await this.uploadService.convertToWebp(file, options);
@@ -86,7 +95,7 @@ export class UploadController {
   }
 
   @Post('pdf')
-  @Auth()
+  @Auth([Roles.ADMIN])
   @ApiBearerAuth()
   @UseInterceptors(
     FileInterceptor('file', {
@@ -176,8 +185,20 @@ export class UploadController {
       throw new BadRequestException('No se ha proporcionado ningún archivo');
     }
 
-    // Usar el ID del usuario autenticado o el proporcionado en query
-    const targetUserId = userId || user.userID;
+    // Solo un ADMIN puede cambiar el avatar de otro usuario; el resto siempre
+    // sube el suyo aunque mande ?userId=.
+    const targetUserId =
+      userId && user.role === Roles.ADMIN ? userId : user.userID;
+
+    // El id acaba en el nombre del archivo: confirmar que es un usuario real
+    // antes de escribir nada en disco.
+    const exists = await this.prismaService.users.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
 
     const relativePath = await this.uploadService.convertToUserAvatar(
       file,
@@ -203,76 +224,8 @@ export class UploadController {
     };
   }
 
-  @Post('company-avatar/:companyId')
-  @Auth()
-  @ApiBearerAuth()
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: {
-        fileSize: 5 * 1024 * 1024, // 5MB límite para avatares
-      },
-      fileFilter: (req, file, callback) => {
-        if (!file.mimetype.startsWith('image/')) {
-          return callback(
-            new BadRequestException('Solo se permiten archivos de imagen'),
-            false,
-          );
-        }
-        callback(null, true);
-      },
-    }),
-  )
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({
-    description: 'Archivo de imagen para avatar de compañía (200x200 WebP)',
-    type: 'multipart/form-data',
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-      },
-    },
-  })
-  async uploadCompanyAvatar(
-    @UploadedFile() file: Express.Multer.File,
-    @ActiveUser() user: ActiveUserData,
-    @Query('companyId') companyId: string,
-  ) {
-    if (!file) {
-      throw new BadRequestException('No se ha proporcionado ningún archivo');
-    }
-
-    // Usar solo el companyId de la ruta o query
-    const targetCompanyId = companyId;
-
-    if (!targetCompanyId) {
-      throw new BadRequestException(
-        'No se ha proporcionado un ID de compañía válido',
-      );
-    }
-
-    const relativePath = await this.uploadService.convertToCompanyAvatar(
-      file,
-      targetCompanyId,
-    );
-
-    return {
-      message: 'Avatar de compañía subido exitosamente (no guardado en BD)',
-      filename: relativePath,
-      url: `/public/${relativePath}`,
-      originalName: file.originalname,
-      size: file.size,
-      dimensions: '200x200',
-      format: 'webp',
-      savedToDatabase: false,
-    };
-  }
-
   @Post('file')
-  @Auth()
+  @Auth([Roles.ADMIN])
   @ApiBearerAuth()
   @UseInterceptors(
     FileInterceptor('file', {
@@ -284,7 +237,7 @@ export class UploadController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     description:
-      'Subir un archivo a una carpeta permitida. Use query ?folder=content|images|documents|users_avatar|company_avatar',
+      'Subir un archivo a una carpeta permitida. Use query ?folder=content|images|documents|users_avatar',
     type: 'multipart/form-data',
     schema: {
       type: 'object',
