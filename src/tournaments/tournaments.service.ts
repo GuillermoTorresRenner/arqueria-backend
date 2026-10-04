@@ -209,7 +209,13 @@ export class TournamentsService {
       },
     });
     if (!tournament) throw new NotFoundException('Torneo no encontrado');
-    return tournament;
+    // Endpoint público: de los datos de pago solo salen los montos; la cuenta
+    // bancaria se entrega por correo a quien se inscribe
+    const { paymentInfo, ...rest } = tournament;
+    const fees =
+      (paymentInfo as { fees?: { label: string; amount: number }[] } | null)
+        ?.fees ?? [];
+    return { ...rest, fees };
   }
 
   async create(dto: CreateTournamentDto) {

@@ -234,11 +234,19 @@ export class ScoringService {
       throw new BadRequestException('El arquero se retiró del torneo');
     }
 
+    // Los torneos creados desde el calendario eligen su modalidad después
+    const scoringFormat = round.tournament.scoringFormat;
+    if (!scoringFormat) {
+      throw new BadRequestException(
+        'El torneo aún no tiene formato de puntuación: defínelo antes de cargar puntajes',
+      );
+    }
+
     return {
       tournamentId: round.tournamentId,
       format: {
-        ...round.tournament.scoringFormat,
-        zones: round.tournament.scoringFormat.zones as unknown as ScoringZone[],
+        ...scoringFormat,
+        zones: scoringFormat.zones as unknown as ScoringZone[],
       },
       registration,
     };

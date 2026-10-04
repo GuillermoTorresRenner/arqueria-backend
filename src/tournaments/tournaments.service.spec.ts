@@ -185,4 +185,22 @@ describe('TournamentsService', () => {
       expect(del).toHaveBeenCalled();
     });
   });
+  it('el detalle público no expone la cuenta bancaria, solo los montos', async () => {
+    const prisma = {
+      tournament: {
+        findUnique: jest.fn(async () => ({
+          id: 't1',
+          slug: 'copa',
+          paymentInfo: {
+            accountNumber: '00012345678',
+            fees: [{ label: 'Socio', amount: 15000 }],
+          },
+        })),
+      },
+    };
+    const result: any = await build(prisma).findBySlug('copa');
+    expect(result.paymentInfo).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('00012345678');
+    expect(result.fees).toEqual([{ label: 'Socio', amount: 15000 }]);
+  });
 });

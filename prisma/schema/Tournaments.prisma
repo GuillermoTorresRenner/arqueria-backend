@@ -29,19 +29,31 @@ model Tournament {
   startsAt        DateTime
   endsAt          DateTime?
   registrationEnd DateTime?
-  scoringFormatId String
+  /// Opcional: un torneo creado desde el calendario define su modalidad después
+  scoringFormatId String?
   status          TournamentStatus @default(DRAFT)
   /// Publica el marcador en vivo para el público
   isPublic        Boolean          @default(false)
   maxParticipants Int?
+  /// Reglamento redactado (HTML del editor); los archivos van en documents
+  rules           String?
+  /// Video instructivo de YouTube
+  youtubeUrl      String?
+  /// Datos de transferencia: banco, cuenta, titular, instrucciones y montos
+  /// ({ bankName, accountType, accountNumber, holderName, holderRut,
+  /// holderEmail, instructions, fees: [{ label, amount }] })
+  paymentInfo     Json?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  scoringFormat ScoringFormat  @relation(fields: [scoringFormatId], references: [id])
+  scoringFormat ScoringFormat?       @relation(fields: [scoringFormatId], references: [id], onDelete: Restrict)
   rounds        Round[]
   groups        TournamentGroup[]
   registrations Registration[]
   draws         GroupDraw[]
+  activity      Activity?
+  judges        TournamentJudge[]
+  documents     TournamentDocument[]
 
   @@index([status, startsAt])
   @@map("tournaments")
@@ -110,19 +122,24 @@ model GroupDraw {
 }
 
 model Registration {
-  id           String             @id @default(cuid())
-  tournamentId String
-  memberId     String
-  groupId      String?
+  id            String             @id @default(cuid())
+  tournamentId  String
+  memberId      String
+  groupId       String?
   /// Posición dentro del grupo (diana/petate)
-  position     Int?
-  status       RegistrationStatus @default(PENDING)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
+  position      Int?
+  /// PENDING: preinscrito, esperando el comprobante de pago.
+  /// CONFIRMED: un admin verificó el pago y lo dejó inscrito.
+  status        RegistrationStatus @default(PENDING)
+  confirmedAt   DateTime?
+  confirmedById String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
 
-  tournament Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  member     Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  group      TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  tournament  Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member      Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  group       TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  confirmedBy Users?           @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
   @@unique([tournamentId, memberId])
   @@index([groupId])
@@ -133,4 +150,37 @@ enum RegistrationStatus {
   PENDING
   CONFIRMED
   WITHDRAWN
+}
+
+/// Jueces del torneo (usuarios ADMIN o JUDGE). Aparte de los jueces de cada
+/// grupo, que se asignan al armar los grupos.
+model TournamentJudge {
+  tournamentId String
+  userId       String
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user       Users      @relation("TournamentJudges", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tournamentId, userId])
+  @@index([userId])
+  @@map("tournament_judges")
+}
+
+/// Reglamentos y bases subidos como archivo (PDF, Word, PowerPoint…)
+model TournamentDocument {
+  id           String   @id @default(cuid())
+  tournamentId String
+  /// Nombre original, para mostrarlo y descargarlo con él
+  name         String
+  /// Ruta relativa a public/ ("documents/tournaments/x.pdf")
+  path         String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@index([tournamentId])
+  @@map("tournament_documents")
 }

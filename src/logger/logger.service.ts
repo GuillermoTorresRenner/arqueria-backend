@@ -12,7 +12,9 @@ export interface EmailLog {
     | 'autoregister'
     | 'join_welcome'
     | 'account_invite'
-    | 'activity_notice';
+    | 'activity_notice'
+    | 'tournament_registration'
+    | 'tournament_confirmed';
   status: 'success' | 'error';
   userName?: string;
   customerName?: string;

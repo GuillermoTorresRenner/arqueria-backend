@@ -20,6 +20,7 @@ describe('ActivitiesService', () => {
         update: jest.fn(async ({ data }) => ({ ...activity, ...data })),
         findUnique: jest.fn(async () => activity),
         findUniqueOrThrow: jest.fn(async () => activity),
+        delete: jest.fn(),
       },
       place: { findUnique: jest.fn() },
       member: {
@@ -39,10 +40,15 @@ describe('ActivitiesService', () => {
     const weather = {
       forActivity: jest.fn(async () => ({ available: false })),
     };
+    const tournaments = {
+      sync: jest.fn(async () => undefined),
+      removeFor: jest.fn(),
+    };
     const service = new ActivitiesService(
       prisma as any,
       email as any,
       weather as any,
+      tournaments as any,
     );
     return { prisma, email, service, activity };
   };
@@ -115,6 +121,21 @@ describe('ActivitiesService', () => {
     await expect(
       service.setAttendance('a1', 'u1', true),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('en un torneo no se confirma asistencia: se inscribe', async () => {
+    const { prisma, service, activity } = build();
+    prisma.member.findUnique.mockResolvedValueOnce({
+      id: 'm1',
+      status: 'ACTIVE',
+    });
+    prisma.activity.findUnique.mockResolvedValueOnce({
+      ...activity,
+      type: 'TOURNAMENT',
+    } as any);
+    await expect(service.setAttendance('a1', 'u1', true)).rejects.toThrow(
+      /inscribirse/,
+    );
   });
 
   it('confirma y cancela la asistencia de un socio activo', async () => {

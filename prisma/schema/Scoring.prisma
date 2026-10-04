@@ -2,7 +2,7 @@
 /// los jueces cargan desde el móvil. El total de la ronda se agrega sumando series.
 
 model Score {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   roundId   String
   memberId  String
   endNumber Int /// número de serie dentro de la ronda, 1..endsPerRound
@@ -12,15 +12,15 @@ model Score {
   /// Suma de la serie, calculada en el backend — nunca se confía en el cliente.
   total     Int
   /// Desempates acumulados en la serie (cantidad de X y de 10).
-  innerTens Int      @default(0)
-  tens      Int      @default(0)
+  innerTens Int    @default(0)
+  tens      Int    @default(0)
 
-  status     ScoreStatus @default(DRAFT)
-  recordedById String /// juez o admin que la cargó
+  status        ScoreStatus @default(DRAFT)
+  recordedById  String /// juez o admin que la cargó
   validatedById String?
-  validatedAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  validatedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   round       Round  @relation(fields: [roundId], references: [id], onDelete: Cascade)
   member      Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -33,7 +33,7 @@ model Score {
 }
 
 enum ScoreStatus {
-  DRAFT     /// cargada, aún editable por el juez
+  DRAFT /// cargada, aún editable por el juez
   CONFIRMED /// cerrada por el juez
   VALIDATED /// revisada por un admin
 }

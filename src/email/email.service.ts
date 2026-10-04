@@ -1,6 +1,38 @@
 import { Injectable } from '@nestjs/common';
 import { CLUB_TIMEZONE, WHATSAPP_GROUP_URL } from '../config/club';
 import type { ActivityWeather } from '../weather/weather.service';
+
+/// Datos de una actividad que usan los correos
+interface NoticeActivity {
+  type: string;
+  title: string;
+  startsAt: Date;
+  endsAt: Date;
+  place: {
+    name: string;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  } | null;
+}
+
+interface PaymentInfoData {
+  bankName?: string;
+  accountType?: string;
+  accountNumber?: string;
+  holderName?: string;
+  holderRut?: string;
+  holderEmail?: string;
+  instructions?: string;
+  fees?: { label: string; amount: number }[];
+}
+
+/// Cómo se presenta cada tipo en los correos (mismos colores que el sitio)
+const ACTIVITY_KIND: Record<string, { eyebrow: string; color: string }> = {
+  ACTIVITY: { eyebrow: 'Nueva actividad', color: '#2f6b8f' },
+  EVENT: { eyebrow: 'Nuevo evento', color: '#6d4aa8' },
+  TOURNAMENT: { eyebrow: 'Nuevo torneo', color: '#b7791f' },
+};
 import * as nodemailer from 'nodemailer';
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
@@ -274,16 +306,11 @@ export class EmailService {
   async sendActivityEmail(params: {
     to: string;
     name?: string | null;
-    activity: {
-      title: string;
-      startsAt: Date;
-      endsAt: Date;
+    activity: NoticeActivity & {
       recommendations: string | null;
-      place: {
-        name: string;
-        address: string | null;
-        latitude: number | null;
-        longitude: number | null;
+      tournament?: {
+        paymentInfo: unknown;
+        registrationEnd: Date | null;
       } | null;
     };
     weather: ActivityWeather;
@@ -293,11 +320,17 @@ export class EmailService {
     const name = params.name || 'arquero';
     const when = this.formatSchedule(activity.startsAt, activity.endsAt);
     const place = activity.place;
-    const mapUrl = !place
-      ? null
-      : place.latitude != null && place.longitude != null
-        ? `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || place.name)}`;
+    const mapUrl = this.mapUrl(place);
+    const kind = ACTIVITY_KIND[activity.type] ?? ACTIVITY_KIND.ACTIVITY;
+    const isTournament = activity.type === 'TOURNAMENT';
+    const fees = isTournament
+      ? this.formatFees(
+          (activity.tournament?.paymentInfo as PaymentInfoData | null)?.fees,
+        )
+      : [];
+    const registrationEnd = activity.tournament?.registrationEnd
+      ? this.formatDateTime(activity.tournament.registrationEnd)
+      : null;
     const forecast = weather.available
       ? {
           ...(weather.during ?? weather.day),
@@ -314,6 +347,15 @@ export class EmailService {
       const html = this.renderTemplate('activity', {
         ...brand,
         firstName: name,
+        eyebrow: kind.eyebrow,
+        accent: kind.color,
+        isTournament,
+        fees,
+        registrationEnd,
+        buttonLabel: isTournament ? 'Inscribirme' : 'Confirmar asistencia',
+        buttonHelp: isTournament
+          ? 'Entra con tu cuenta del club para preinscribirte. Te enviaremos los datos de pago.'
+          : 'Entra con tu cuenta del club para confirmar.',
         title: activity.title,
         date: when.date,
         time: when.time,
@@ -333,7 +375,7 @@ export class EmailService {
         text: [
           `Hola, ${name}:`,
           '',
-          `Nueva actividad en ${brand.companyName}: ${activity.title}`,
+          `${kind.eyebrow} de ${brand.companyName}: ${activity.title}`,
           `Cuándo: ${when.date}, ${when.time}`,
           place
             ? `Dónde: ${place.name}${place.address ? ` (${place.address})` : ''}`
@@ -344,8 +386,14 @@ export class EmailService {
           activity.recommendations
             ? `\nRecomendaciones:\n${this.htmlToText(activity.recommendations)}`
             : '',
+          fees.length
+            ? `\nInscripción:\n${fees.map((f) => `• ${f.label}: ${f.amount}`).join('\n')}`
+            : '',
+          registrationEnd ? `Inscripciones hasta: ${registrationEnd}` : '',
           '',
-          `Confirma tu asistencia: ${confirmUrl}`,
+          isTournament
+            ? `Inscríbete desde tu cuenta: ${confirmUrl}`
+            : `Confirma tu asistencia: ${confirmUrl}`,
           '',
           `Recibes este correo porque eres socio de ${brand.companyName} y`,
           'aceptaste recibir comunicaciones del club por email.',
@@ -374,6 +422,203 @@ export class EmailService {
       );
       return false;
     }
+  }
+
+  /**
+   * Preinscripción a un torneo: datos de transferencia, montos y cómo enviar
+   * el comprobante. Responder el correo llega al club (reply-to).
+   */
+  async sendTournamentRegistrationEmail(params: {
+    to: string;
+    name?: string | null;
+    memberName: string;
+    activity: NoticeActivity;
+    paymentInfo: PaymentInfoData | null;
+  }): Promise<boolean> {
+    const { to, activity, paymentInfo } = params;
+    const brand = this.brand();
+    const name = params.name || 'arquero';
+    const when = this.formatSchedule(activity.startsAt, activity.endsAt);
+    const fees = this.formatFees(paymentInfo?.fees);
+    const bank = [
+      ['Banco', paymentInfo?.bankName],
+      ['Tipo de cuenta', paymentInfo?.accountType],
+      ['Número de cuenta', paymentInfo?.accountNumber],
+      ['Titular', paymentInfo?.holderName],
+      ['RUT', paymentInfo?.holderRut],
+      ['Correo', paymentInfo?.holderEmail],
+    ]
+      .filter(([, value]) => value)
+      .map(([label, value]) => ({ label, value }));
+    const receiptSubject = `Comprobante de pago · ${activity.title} · ${params.memberName}`;
+    const receiptUrl = `mailto:${brand.supportEmail}?subject=${encodeURIComponent(receiptSubject)}`;
+
+    return this.sendSimple({
+      to,
+      logType: 'tournament_registration',
+      userName: name,
+      template: 'tournament-registration',
+      subject: `Preinscripción recibida · ${activity.title}`,
+      data: {
+        firstName: name,
+        title: activity.title,
+        date: when.date,
+        time: when.time,
+        place: activity.place,
+        mapUrl: this.mapUrl(activity.place),
+        bank,
+        fees,
+        instructions: paymentInfo?.instructions,
+        receiptUrl,
+        receiptSubject,
+        accountUrl: `${brand.frontendUrl}/mi-cuenta#actividades`,
+      },
+      text: [
+        `Hola, ${name}:`,
+        '',
+        `Recibimos tu preinscripción en ${activity.title} (${when.date}, ${when.time}).`,
+        'Para quedar inscrito, transfiere el monto que corresponda y envíanos el comprobante.',
+        '',
+        ...(fees.length
+          ? ['Montos:', ...fees.map((f) => `• ${f.label}: ${f.amount}`), '']
+          : []),
+        ...(bank.length
+          ? [
+              'Datos de transferencia:',
+              ...bank.map((b) => `${b.label}: ${b.value}`),
+              '',
+            ]
+          : []),
+        paymentInfo?.instructions ? `${paymentInfo.instructions}\n` : '',
+        `Envía el comprobante respondiendo este correo o a ${brand.supportEmail}`,
+        `con el asunto «${receiptSubject}».`,
+        '',
+        'Cuando verifiquemos el pago te confirmaremos la inscripción por correo.',
+      ],
+    });
+  }
+
+  /// Un admin verificó el pago: inscripción confirmada
+  async sendTournamentConfirmedEmail(params: {
+    to: string;
+    name?: string | null;
+    activity: NoticeActivity;
+  }): Promise<boolean> {
+    const { to, activity } = params;
+    const brand = this.brand();
+    const name = params.name || 'arquero';
+    const when = this.formatSchedule(activity.startsAt, activity.endsAt);
+    return this.sendSimple({
+      to,
+      logType: 'tournament_confirmed',
+      userName: name,
+      template: 'tournament-confirmed',
+      subject: `Inscripción confirmada · ${activity.title}`,
+      data: {
+        firstName: name,
+        title: activity.title,
+        date: when.date,
+        time: when.time,
+        place: activity.place,
+        mapUrl: this.mapUrl(activity.place),
+        accountUrl: `${brand.frontendUrl}/mi-cuenta#actividades`,
+      },
+      text: [
+        `Hola, ${name}:`,
+        '',
+        `Verificamos tu pago: ya estás inscrito en ${activity.title}.`,
+        `Cuándo: ${when.date}, ${when.time}`,
+        activity.place ? `Dónde: ${activity.place.name}` : '',
+        '',
+        '¡Nos vemos en la línea de tiro!',
+      ],
+    });
+  }
+
+  /// Envío con plantilla y registro en el log. No lanza.
+  private async sendSimple(params: {
+    to: string;
+    logType: 'tournament_registration' | 'tournament_confirmed';
+    userName: string;
+    template: string;
+    subject: string;
+    data: Record<string, unknown>;
+    text: string[];
+  }): Promise<boolean> {
+    const brand = this.brand();
+    try {
+      const html = this.renderTemplate(params.template, {
+        ...brand,
+        ...params.data,
+      });
+      await this.transporter.sendMail({
+        from: `"${brand.companyName}" <${brand.supportEmail}>`,
+        replyTo: brand.supportEmail,
+        to: params.to,
+        subject: params.subject,
+        html,
+        text: [
+          ...params.text,
+          '',
+          `${brand.companyName} · ${brand.frontendUrl}`,
+        ]
+          .filter((line, i, all) => line !== '' || all[i - 1] !== '')
+          .join('\n'),
+      });
+      await this.loggerService.logEmailEvent({
+        email: params.to,
+        type: params.logType,
+        status: 'success',
+        userName: params.userName,
+      });
+      return true;
+    } catch (error) {
+      await this.loggerService.logEmailEvent({
+        email: params.to,
+        type: params.logType,
+        status: 'error',
+        userName: params.userName,
+        error: error.message,
+      });
+      console.error(
+        `No se pudo enviar el correo a ${params.to}:`,
+        error.message,
+      );
+      return false;
+    }
+  }
+
+  private mapUrl(place: NoticeActivity['place']) {
+    if (!place) return null;
+    return place.latitude != null && place.longitude != null
+      ? `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || place.name)}`;
+  }
+
+  /// Montos en pesos chilenos: «$15.000»
+  private formatFees(fees?: { label: string; amount: number }[] | null) {
+    const clp = new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      maximumFractionDigits: 0,
+    });
+    return (fees ?? []).map((f) => ({
+      label: f.label,
+      amount: clp.format(f.amount),
+    }));
+  }
+
+  private formatDateTime(date: Date) {
+    const text = new Intl.DateTimeFormat('es-CL', {
+      timeZone: CLUB_TIMEZONE,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(date);
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   /// «sábado 11 de octubre» y «10:00 a 13:00», en la zona horaria del club

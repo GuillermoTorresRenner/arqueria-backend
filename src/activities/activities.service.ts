@@ -5,15 +5,48 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MemberStatus, Prisma } from '@prisma/client';
+import {
+  ActivityType,
+  MemberStatus,
+  Prisma,
+  RegistrationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { WeatherService } from '../weather/weather.service';
 import { CreateActivityDto, UpdateActivityDto } from './dto';
+import {
+  ActivityTournamentsService,
+  PaymentInfo,
+} from './activity-tournaments.service';
+
+/// Inscripciones vivas (preinscritos e inscritos)
+const ACTIVE_REGISTRATIONS = {
+  where: { status: { not: RegistrationStatus.WITHDRAWN } },
+} as const;
+
+/// Lo público de un torneo. paymentInfo se recorta después: fuera de la
+/// cuenta del socio solo se muestran los montos, no la cuenta bancaria.
+const TOURNAMENT_PUBLIC_SELECT = {
+  id: true,
+  slug: true,
+  status: true,
+  rules: true,
+  youtubeUrl: true,
+  registrationEnd: true,
+  maxParticipants: true,
+  paymentInfo: true,
+  documents: {
+    select: { id: true, name: true, path: true, mimeType: true, size: true },
+    orderBy: { createdAt: 'asc' },
+  },
+  _count: { select: { registrations: ACTIVE_REGISTRATIONS } },
+} satisfies Prisma.TournamentSelect;
 
 /// Datos públicos de una actividad: lo que ven el home y los socios
 const PUBLIC_SELECT = {
   id: true,
+  type: true,
   title: true,
   startsAt: true,
   endsAt: true,
@@ -27,19 +60,44 @@ const PUBLIC_SELECT = {
       longitude: true,
     },
   },
+  tournament: { select: TOURNAMENT_PUBLIC_SELECT },
   _count: { select: { attendances: true } },
 } satisfies Prisma.ActivitySelect;
 
 const ADMIN_INCLUDE = {
   place: true,
+  tournament: {
+    select: {
+      id: true,
+      slug: true,
+      status: true,
+      _count: { select: { registrations: ACTIVE_REGISTRATIONS } },
+    },
+  },
   _count: { select: { attendances: true } },
 } satisfies Prisma.ActivityInclude;
+
+/// Lo que necesita el correo de aviso
+const NOTICE_INCLUDE = {
+  place: true,
+  tournament: { select: { paymentInfo: true, registrationEnd: true } },
+} satisfies Prisma.ActivityInclude;
+
+/// Deja de un torneo solo los montos (sin datos bancarios)
+function withPublicFees<
+  T extends { tournament: { paymentInfo: Prisma.JsonValue } | null },
+>(activity: T) {
+  if (!activity.tournament) return activity;
+  const { paymentInfo, ...tournament } = activity.tournament;
+  const fees = (paymentInfo as PaymentInfo | null)?.fees ?? [];
+  return { ...activity, tournament: { ...tournament, fees } };
+}
 
 /// Envíos simultáneos al SMTP. Gmail corta si se abren demasiadas conexiones.
 const SEND_CONCURRENCY = 3;
 
-type ActivityWithPlace = Prisma.ActivityGetPayload<{
-  include: typeof ADMIN_INCLUDE;
+type ActivityForNotice = Prisma.ActivityGetPayload<{
+  include: typeof NOTICE_INCLUDE;
 }>;
 
 @Injectable()
@@ -50,6 +108,7 @@ export class ActivitiesService {
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly weather: WeatherService,
+    private readonly tournaments: ActivityTournamentsService,
   ) {}
 
   // ---------- Administración ----------
@@ -71,6 +130,46 @@ export class ActivitiesService {
       where: { id },
       include: {
         ...ADMIN_INCLUDE,
+        tournament: {
+          include: {
+            judges: {
+              select: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    surname: true,
+                    email: true,
+                    userRoles: true,
+                  },
+                },
+              },
+            },
+            documents: { orderBy: { createdAt: 'asc' } },
+            registrations: {
+              where: { status: { not: RegistrationStatus.WITHDRAWN } },
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                status: true,
+                createdAt: true,
+                confirmedAt: true,
+                confirmedBy: { select: { name: true, surname: true } },
+                member: {
+                  select: {
+                    id: true,
+                    memberNumber: true,
+                    experience: true,
+                    user: {
+                      select: { name: true, surname: true, email: true },
+                    },
+                  },
+                },
+              },
+            },
+            _count: { select: { registrations: ACTIVE_REGISTRATIONS } },
+          },
+        },
         attendances: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -97,6 +196,7 @@ export class ActivitiesService {
 
     const activity = await this.prisma.activity.create({
       data: {
+        type: dto.type ?? ActivityType.ACTIVITY,
         title: dto.title,
         startsAt,
         endsAt,
@@ -105,11 +205,19 @@ export class ActivitiesService {
         notifyMembers: dto.notifyMembers ?? false,
         createdById,
       },
-      include: ADMIN_INCLUDE,
+      include: { place: true },
     });
+    // Si la ficha del torneo falla (p. ej. un juez inválido), no queda una
+    // actividad a medias
+    await this.tournaments
+      .sync(activity, dto.tournament)
+      .catch(async (error) => {
+        await this.prisma.activity.delete({ where: { id: activity.id } });
+        throw error;
+      });
 
     const notification = activity.notifyMembers
-      ? await this.notify(activity)
+      ? await this.notify(activity.id)
       : null;
     return { ...(await this.reload(activity.id)), notification };
   }
@@ -130,6 +238,7 @@ export class ActivitiesService {
     const activity = await this.prisma.activity.update({
       where: { id },
       data: {
+        type: dto.type,
         title: dto.title,
         startsAt,
         endsAt,
@@ -140,34 +249,38 @@ export class ActivitiesService {
             : this.cleanHtml(dto.recommendations),
         notifyMembers: dto.notifyMembers,
       },
-      include: ADMIN_INCLUDE,
+      include: { place: true },
     });
+    await this.tournaments.sync(activity, dto.tournament);
 
     // La decisión persiste: si al crearla se dijo que no y ahora se marca,
     // el aviso sale en este momento. Si ya se avisó, no se repite solo.
     const notification =
       activity.notifyMembers && !activity.notifiedAt
-        ? await this.notify(activity)
+        ? await this.notify(id)
         : null;
     return { ...(await this.reload(id)), notification };
   }
 
   /// Aviso explícito desde el panel: el primero o uno nuevo tras un cambio
   async notifyNow(id: string) {
-    const activity = await this.prisma.activity.findUnique({
-      where: { id },
-      include: ADMIN_INCLUDE,
-    });
-    if (!activity) throw new NotFoundException('Actividad no encontrada');
-    const notification = await this.notify(activity);
+    const exists = await this.prisma.activity.count({ where: { id } });
+    if (!exists) throw new NotFoundException('Actividad no encontrada');
+    const notification = await this.notify(id);
     return { ...(await this.reload(id)), notification };
   }
 
+  /// Un torneo se lleva su ficha, inscripciones y reglamentos en archivo
   async remove(id: string) {
-    await this.prisma.activity.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException('Actividad no encontrada');
-    });
+    const activity = await this.prisma.activity.findUnique({ where: { id } });
+    if (!activity) throw new NotFoundException('Actividad no encontrada');
+    await this.prisma.activity.delete({ where: { id } });
+    await this.tournaments.removeFor(activity);
     return { id };
+  }
+
+  paymentDefaults() {
+    return this.tournaments.paymentDefaults();
   }
 
   async weatherPreview(placeId: string, startsAt: string, endsAt: string) {
@@ -183,13 +296,14 @@ export class ActivitiesService {
   // ---------- Público y socios ----------
 
   /// Próximas actividades (incluida la que está en curso)
-  findUpcoming(limit = 6) {
-    return this.prisma.activity.findMany({
+  async findUpcoming(limit = 6) {
+    const activities = await this.prisma.activity.findMany({
       where: { endsAt: { gte: new Date() } },
       select: PUBLIC_SELECT,
       orderBy: { startsAt: 'asc' },
       take: limit,
     });
+    return activities.map(withPublicFees);
   }
 
   /// Calendario del socio: las próximas, marcando a cuáles va
@@ -202,6 +316,18 @@ export class ActivitiesService {
       where: { endsAt: { gte: new Date() } },
       select: {
         ...PUBLIC_SELECT,
+        // El socio sí ve los datos de transferencia completos
+        tournament: {
+          select: {
+            ...TOURNAMENT_PUBLIC_SELECT,
+            registrations: member
+              ? {
+                  where: { memberId: member.id },
+                  select: { status: true, createdAt: true, confirmedAt: true },
+                }
+              : false,
+          },
+        },
         attendances: member
           ? { where: { memberId: member.id }, select: { createdAt: true } }
           : false,
@@ -212,10 +338,25 @@ export class ActivitiesService {
     const canAttend = member?.status === MemberStatus.ACTIVE;
     return {
       canAttend,
-      activities: activities.map(({ attendances, ...a }) => ({
-        ...a,
-        attending: Boolean(attendances?.length),
-      })),
+      activities: activities.map(({ attendances, tournament, ...a }) => {
+        if (!tournament) {
+          return { ...a, tournament, attending: Boolean(attendances?.length) };
+        }
+        const { registrations, paymentInfo, ...t } = tournament;
+        const mine = registrations?.find(
+          (r) => r.status !== RegistrationStatus.WITHDRAWN,
+        );
+        return {
+          ...a,
+          attending: false,
+          tournament: {
+            ...t,
+            fees: (paymentInfo as PaymentInfo | null)?.fees ?? [],
+            paymentInfo: paymentInfo as PaymentInfo | null,
+          },
+          registration: mine ?? null,
+        };
+      }),
     };
   }
 
@@ -233,6 +374,11 @@ export class ActivitiesService {
     }
     const activity = await this.prisma.activity.findUnique({ where: { id } });
     if (!activity) throw new NotFoundException('Actividad no encontrada');
+    if (activity.type === ActivityType.TOURNAMENT) {
+      throw new BadRequestException(
+        'En los torneos no se confirma asistencia: hay que inscribirse',
+      );
+    }
     if (activity.endsAt.getTime() < Date.now()) {
       throw new BadRequestException('La actividad ya terminó');
     }
@@ -278,7 +424,11 @@ export class ActivitiesService {
    * cuántos va a escribir; el envío sigue en segundo plano (con muchos socios
    * tardaría más que una petición HTTP) y al terminar guarda cuántos salieron.
    */
-  private async notify(activity: ActivityWithPlace) {
+  private async notify(id: string) {
+    const activity = await this.prisma.activity.findUniqueOrThrow({
+      where: { id },
+      include: NOTICE_INCLUDE,
+    });
     if (activity.endsAt.getTime() < Date.now()) {
       throw new BadRequestException(
         'La actividad ya terminó: no se puede avisar a los socios',
@@ -306,7 +456,7 @@ export class ActivitiesService {
   }
 
   private async sendNotices(
-    activity: ActivityWithPlace,
+    activity: ActivityForNotice,
     recipients: { email: string; name: string | null }[],
   ) {
     const weather = await this.weather.forActivity({

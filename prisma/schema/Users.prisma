@@ -1,27 +1,29 @@
 model Users {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  password       String
-  name           String?
-  surname        String?
-  phone          String?
-  lastConnection DateTime?
-  refreshToken   String?
-  userRoles      Role      @default(MEMBER)
-  avatar         String?
-  isActive       Boolean   @default(true)
-  emailVerified  Boolean   @default(false)
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  name            String?
+  surname         String?
+  phone           String?
+  lastConnection  DateTime?
+  refreshToken    String?
+  userRoles       Role      @default(MEMBER)
+  avatar          String?
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
   /// Cuándo confirmó su correo (al crear su contraseña desde el enlace del email)
-  emailVerifiedAt  DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  member           Member?
-  judgedGroups     TournamentGroup[]
-  groupDraws       GroupDraw[]
-  scoresRecorded   Score[]          @relation("ScoreRecordedBy")
-  scoresValidated  Score[]          @relation("ScoreValidatedBy")
-  activitiesCreated Activity[]      @relation("ActivityCreatedBy")
+  member                 Member?
+  judgedGroups           TournamentGroup[]
+  groupDraws             GroupDraw[]
+  scoresRecorded         Score[]           @relation("ScoreRecordedBy")
+  scoresValidated        Score[]           @relation("ScoreValidatedBy")
+  activitiesCreated      Activity[]        @relation("ActivityCreatedBy")
+  tournamentJudging      TournamentJudge[] @relation("TournamentJudges")
+  registrationsConfirmed Registration[]    @relation("RegistrationConfirmedBy")
 
   @@map("users")
 }

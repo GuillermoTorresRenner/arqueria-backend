@@ -2,7 +2,7 @@
   <head>
     <meta charset='utf-8' />
     <meta name='viewport' content='width=device-width, initial-scale=1' />
-    <title>{{title}} · {{companyName}}</title>
+    <title>Preinscripción · {{companyName}}</title>
   </head>
   <!--
     Email HTML: tablas y estilos en línea a propósito. Los clientes de correo
@@ -12,7 +12,7 @@
   <body style='margin:0;padding:0;background-color:#f2ece0;'>
     <!-- Texto de vista previa: lo que se lee en la bandeja antes de abrir -->
     <div style='display:none;max-height:0;overflow:hidden;opacity:0;'>
-      {{title}}: {{date}}, {{time}}.
+      Preinscripción recibida: {{title}}. Datos para pagar la inscripción.
     </div>
 
     <table
@@ -55,27 +55,17 @@
 
             <!-- Cuerpo -->
             <tr>
-              <td
-                style='padding:36px 32px 8px;font-family:Arial,sans-serif;color:#1f1710;'
-              >
-                <p
-                  style='margin:0 0 6px;font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:bold;color:{{accent}};'
-                >
-                  {{eyebrow}}
+              <td style='padding:36px 32px 8px;font-family:Arial,sans-serif;color:#1f1710;'>
+                <p style='margin:0 0 6px;font-size:12px;letter-spacing:2px;text-transform:uppercase;font-weight:bold;color:#b7791f;'>
+                  Preinscripción recibida
                 </p>
-                <h1
-                  style='margin:0 0 16px;font-size:24px;font-weight:bold;color:#1f1710;'
-                >
-                  {{title}}
+                <h1 style='margin:0 0 16px;font-size:22px;font-weight:bold;color:#1f1710;'>
+                  ¡Hola, {{firstName}}!
                 </h1>
-                <p
-                  style='margin:0 0 18px;font-size:15px;line-height:1.65;color:#4a3a2a;'
-                >
-                  Hola, {{firstName}}. Te contamos los detalles para que
-                  puedas organizarte:
+                <p style='margin:0 0 14px;font-size:15px;line-height:1.65;color:#4a3a2a;'>
+                  Quedaste <strong>preinscrito</strong>. Para completar tu inscripción,
+                  transfiere el monto que corresponda y envíanos el comprobante.
                 </p>
-
-                <!-- Cuándo y dónde -->
                 <table
                   role='presentation'
                   width='100%'
@@ -85,16 +75,14 @@
                 >
                   <tr>
                     <td style='padding:14px 18px;font-size:14px;line-height:1.6;color:#1f1710;'>
-                      <strong style='color:#8b5e34;'>Cuándo:</strong>
-                      {{date}},
-                      {{time}}
+                      <strong style='color:#8b5e34;'>Torneo:</strong> {{title}}<br />
+                      <strong style='color:#8b5e34;'>Cuándo:</strong> {{date}}, {{time}}
                       {{#if place}}
                         <br />
                         <strong style='color:#8b5e34;'>Dónde:</strong>
                         {{place.name}}{{#if place.address}} · {{place.address}}{{/if}}
                         {{#if mapUrl}}
-                          <br />
-                          <a href='{{mapUrl}}' style='color:#a81e24;font-size:13px;'>Ver en el mapa</a>
+                          <br /><a href='{{mapUrl}}' style='color:#a81e24;font-size:13px;'>Ver en el mapa</a>
                         {{/if}}
                       {{/if}}
                     </td>
@@ -103,42 +91,10 @@
               </td>
             </tr>
 
-            {{#if forecast}}
-              <!-- Pronóstico -->
-              <tr>
-                <td style='padding:14px 32px 0;font-family:Arial,sans-serif;'>
-                  <table
-                    role='presentation'
-                    width='100%'
-                    cellpadding='0'
-                    cellspacing='0'
-                    style='border:1px solid #e6d6b8;border-left:4px solid {{forecast.color}};border-radius:8px;'
-                  >
-                    <tr>
-                      <td style='padding:12px 16px;font-size:14px;line-height:1.6;color:#1f1710;'>
-                        <strong style='color:{{forecast.color}};'>{{forecast.statusLabel}}</strong>
-                        <br />
-                        {{forecast.description}} · {{forecast.tempMin}}–{{forecast.tempMax}} °C ·
-                        lluvia {{forecast.precipitationProbability}} % · viento hasta
-                        {{forecast.gustsMax}} km/h
-                        {{#if forecast.reasons}}
-                          <br />
-                          <span style='font-size:13px;color:#6b5539;'>{{forecast.reasons}}</span>
-                        {{/if}}
-                        <br />
-                        <span style='font-size:11px;color:#8a7a63;'>Pronóstico de Open-Meteo para las horas de la actividad; puede cambiar.</span>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            {{/if}}
-
             {{#if fees.length}}
-              <!-- Montos de inscripción (torneos) -->
               <tr>
                 <td style='padding:22px 32px 0;font-family:Arial,sans-serif;'>
-                  <h2 style='margin:0 0 8px;font-size:17px;color:#1f1710;'>Inscripción</h2>
+                  <h2 style='margin:0 0 8px;font-size:17px;color:#1f1710;'>Montos</h2>
                   <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='font-size:14px;color:#1f1710;'>
                     {{#each fees}}
                       <tr>
@@ -147,37 +103,54 @@
                       </tr>
                     {{/each}}
                   </table>
-                  {{#if registrationEnd}}
-                    <p style='margin:8px 0 0;font-size:13px;color:#6b5539;'>Inscripciones hasta: {{registrationEnd}}</p>
-                  {{/if}}
                 </td>
               </tr>
             {{/if}}
 
-            {{#if recommendations}}
-              <!-- Recomendaciones (HTML del editor del panel) -->
+            {{#if bank.length}}
               <tr>
-                <td
-                  style='padding:22px 32px 0;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#4a3a2a;'
-                >
-                  <h2 style='margin:0 0 8px;font-size:17px;color:#1f1710;'>Recomendaciones</h2>
-                  {{recommendations}}
+                <td style='padding:22px 32px 0;font-family:Arial,sans-serif;'>
+                  <h2 style='margin:0 0 8px;font-size:17px;color:#1f1710;'>Datos de transferencia</h2>
+                  <table role='presentation' width='100%' cellpadding='0' cellspacing='0' style='background-color:#f7efdf;border:1px solid #e6d6b8;border-radius:8px;font-size:14px;color:#1f1710;'>
+                    {{#each bank}}
+                      <tr>
+                        <td style='padding:8px 16px;color:#6b5539;width:42%;'>{{label}}</td>
+                        <td style='padding:8px 16px;font-weight:bold;'>{{value}}</td>
+                      </tr>
+                    {{/each}}
+                  </table>
                 </td>
               </tr>
             {{/if}}
 
-            <!-- Botón principal -->
+            {{#if instructions}}
+              <tr>
+                <td style='padding:16px 32px 0;font-family:Arial,sans-serif;font-size:14px;line-height:1.65;color:#4a3a2a;white-space:pre-line;'>{{instructions}}</td>
+              </tr>
+            {{/if}}
+
+            <!-- Comprobante -->
             <tr>
-              <td style='padding:26px 32px 30px;text-align:center;'>
-                <a
-                  href='{{confirmUrl}}'
-                  style='display:inline-block;background-color:#a81e24;color:#fff8ee;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;'
-                >
-                  {{buttonLabel}}
-                </a>
-                <p style='margin:10px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#8a7a63;'>
-                  {{buttonHelp}}
+              <td style='padding:24px 32px 6px;text-align:center;font-family:Arial,sans-serif;'>
+                <p style='margin:0 0 14px;font-size:15px;line-height:1.6;color:#1f1710;'>
+                  <strong>Envíanos el comprobante</strong> respondiendo este correo o escribiendo a
+                  <a href='mailto:{{supportEmail}}' style='color:#a81e24;'>{{supportEmail}}</a>.
                 </p>
+                <a
+                  href='{{receiptUrl}}'
+                  style='display:inline-block;background-color:#a81e24;color:#fff8ee;font-size:15px;font-weight:bold;text-decoration:none;padding:14px 32px;border-radius:8px;'
+                >
+                  Enviar comprobante
+                </a>
+                <p style='margin:10px 0 0;font-size:12px;color:#8a7a63;'>
+                  Asunto sugerido: {{receiptSubject}}
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style='padding:14px 32px 30px;text-align:center;font-family:Arial,sans-serif;font-size:13px;line-height:1.6;color:#6b5539;'>
+                Cuando verifiquemos el pago te confirmaremos la inscripción por correo.
+                Puedes ver el estado en <a href='{{accountUrl}}' style='color:#a81e24;'>tu cuenta</a>.
               </td>
             </tr>
 
@@ -198,9 +171,8 @@
                 <p
                   style='margin:0 0 6px;font-size:11px;line-height:1.6;color:#8a7a63;'
                 >
-                  Recibes este correo porque eres socio de
-                  {{companyName}}
-                  y aceptaste recibir comunicaciones del club por email.
+                  Recibes este correo por tu inscripción en un torneo de
+                  {{companyName}}.
                 </p>
                 <p style='margin:0;font-size:11px;color:#8a7a63;'>
                   ©

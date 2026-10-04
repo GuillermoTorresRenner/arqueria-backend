@@ -21,7 +21,9 @@ model Place {
 }
 
 model Activity {
-  id              String    @id @default(cuid())
+  id              String       @id @default(cuid())
+  /// Actividad (por defecto), evento o torneo. Se pinta con un color por tipo.
+  type            ActivityType @default(ACTIVITY)
   title           String
   startsAt        DateTime
   endsAt          DateTime
@@ -30,21 +32,30 @@ model Activity {
   recommendations String?
   /// Decisión de avisar a los socios por correo. Persiste: si al crearla se
   /// dijo que no, se puede activar más adelante desde la edición.
-  notifyMembers   Boolean   @default(false)
+  notifyMembers   Boolean      @default(false)
   /// Último aviso enviado y a cuántos socios llegó
   notifiedAt      DateTime?
   notifiedCount   Int?
   createdById     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  /// Solo torneos: su ficha de torneo (jueces, reglamento, pago, inscripciones)
+  tournamentId    String?      @unique
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   /// Restrict: un lugar con actividades no se borra, se desactiva
   place       Place?               @relation(fields: [placeId], references: [id], onDelete: Restrict)
   createdBy   Users?               @relation("ActivityCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  tournament  Tournament?          @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   attendances ActivityAttendance[]
 
   @@index([startsAt])
   @@map("activities")
+}
+
+enum ActivityType {
+  ACTIVITY /// jornada, clase, salida
+  EVENT /// evento del club
+  TOURNAMENT /// torneo: inscripción con pago en vez de confirmar asistencia
 }
 
 /// Confirmación de asistencia de un socio a una actividad

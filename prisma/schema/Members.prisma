@@ -2,46 +2,46 @@
 /// se guarda como referencia a Category para poder cambiarla sin tocar código.
 
 model Member {
-  id            String       @id @default(cuid())
-  userId        String       @unique
-  memberNumber  Int          @unique @default(autoincrement())
-  documentId    String?      @unique /// RUT o documento
-  birthDate     DateTime?
-  phone         String?
-  joinedAt      DateTime     @default(now())
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  memberNumber       Int                @unique @default(autoincrement())
+  documentId         String?            @unique /// RUT o documento
+  birthDate          DateTime?
+  phone              String?
+  joinedAt           DateTime           @default(now())
   /// Los socios no requieren aprobación: entran activos al inscribirse
-  status        MemberStatus @default(ACTIVE)
+  status             MemberStatus       @default(ACTIVE)
   /// Vigencia de la membresía; null = sin vencimiento registrado
-  membershipEnd DateTime?
-  notes         String?
+  membershipEnd      DateTime?
+  notes              String?
   /// Experiencia declarada al inscribirse desde la web
-  experience    ArcheryExperience?
+  experience         ArcheryExperience?
   /// Aceptó recibir comunicaciones por email. Se guarda cuándo, como prueba
   /// del consentimiento.
-  marketingConsent   Boolean   @default(false)
+  marketingConsent   Boolean            @default(false)
   marketingConsentAt DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  user         Users            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  categories   MemberCategory[]
+  user          Users                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories    MemberCategory[]
   registrations Registration[]
-  scores       Score[]
-  attendances  ActivityAttendance[]
+  scores        Score[]
+  attendances   ActivityAttendance[]
 
   @@index([status])
   @@map("members")
 }
 
 enum ArcheryExperience {
-  NONE          /// nunca ha tirado
-  BEGINNER      /// lo ha probado alguna vez
-  INTERMEDIATE  /// practica con regularidad
-  ADVANCED      /// compite o tiene experiencia avanzada
+  NONE /// nunca ha tirado
+  BEGINNER /// lo ha probado alguna vez
+  INTERMEDIATE /// practica con regularidad
+  ADVANCED /// compite o tiene experiencia avanzada
 }
 
 enum MemberStatus {
-  PENDING  /// en desuso: los socios ya no requieren aprobación (se migraron a ACTIVE)
+  PENDING /// en desuso: los socios ya no requieren aprobación (se migraron a ACTIVE)
   ACTIVE
   SUSPENDED
   INACTIVE
