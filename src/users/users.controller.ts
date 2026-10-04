@@ -199,8 +199,22 @@ export class UsersController {
   update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @ActiveUser() requester: ActiveUserData,
     @UploadedFile() avatar?: Express.Multer.File,
   ) {
+    // Mismo criterio que el DELETE: un admin no puede quitarse a sí mismo el
+    // acceso al panel. Si fuera el único, nadie podría devolvérselo.
+    if (id === requester.userID) {
+      if (
+        updateUserDto.role !== undefined &&
+        updateUserDto.role !== Roles.ADMIN
+      ) {
+        throw new BadRequestException('No puedes cambiar tu propio rol');
+      }
+      if (updateUserDto.isActive === false) {
+        throw new BadRequestException('No puedes desactivar tu propia cuenta');
+      }
+    }
     return this.usersService.updateUserData(id, updateUserDto, avatar);
   }
 
