@@ -9,10 +9,11 @@ import {
 } from './activities.controller';
 import { ActivitiesService } from './activities.service';
 import { PlacesService } from './places.service';
+import { GeocodingService } from './geocoding.service';
 
 @Module({
   imports: [PrismaModule, AuthModule, EmailModule, WeatherModule],
   controllers: [ActivitiesController, PlacesController],
-  providers: [ActivitiesService, PlacesService],
+  providers: [ActivitiesService, PlacesService, GeocodingService],
 })
 export class ActivitiesModule {}

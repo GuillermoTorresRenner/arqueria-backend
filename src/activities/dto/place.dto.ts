@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsLatitude,
@@ -59,4 +59,16 @@ export class GeocodeQueryDto {
   @MaxLength(100)
   @Transform(trim)
   q: string;
+}
+
+export class ReverseGeocodeDto {
+  @ApiProperty({ example: -33.4515 })
+  @Type(() => Number)
+  @IsLatitude({ message: 'Latitud inválida' })
+  lat: number;
+
+  @ApiProperty({ example: -70.5339 })
+  @Type(() => Number)
+  @IsLongitude({ message: 'Longitud inválida' })
+  lon: number;
 }

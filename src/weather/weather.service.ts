@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CLUB_COUNTRY, CLUB_TIMEZONE } from '../config/club';
+import { CLUB_TIMEZONE } from '../config/club';
 
 /// Open-Meteo: servicio meteorológico abierto (modelos de los servicios
 /// nacionales, incluido el GFS/ECMWF), sin clave de API ni costo para uso no
 /// comercial. Pronostica hasta 16 días.
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
-const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 export const FORECAST_DAYS = 16;
 
 const CACHE_TTL = 30 * 60 * 1000;
@@ -45,14 +44,6 @@ export type ActivityWeather =
       reason: 'no_location' | 'out_of_range' | 'past' | 'error';
       message: string;
     };
-
-export interface GeocodingResult {
-  name: string;
-  region: string | null;
-  country: string | null;
-  latitude: number;
-  longitude: number;
-}
 
 /// Códigos WMO que usa Open-Meteo, en castellano
 const WMO: Record<number, string> = {
@@ -232,40 +223,6 @@ export class WeatherService {
       reasons,
       source: 'Open-Meteo',
     };
-  }
-
-  /// Busca lugares por nombre para obtener sus coordenadas
-  async geocode(query: string): Promise<GeocodingResult[]> {
-    const url = new URL(GEOCODING_URL);
-    url.searchParams.set('name', query);
-    url.searchParams.set('count', '8');
-    url.searchParams.set('language', 'es');
-    url.searchParams.set('format', 'json');
-    // Sin filtro, «La Reina» devuelve antes Honduras que la comuna de Santiago
-    url.searchParams.set('countryCode', CLUB_COUNTRY);
-
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
-    });
-    if (!res.ok) throw new Error(`Open-Meteo geocoding ${res.status}`);
-    const body = (await res.json()) as {
-      results?: {
-        name: string;
-        admin1?: string;
-        admin2?: string;
-        country?: string;
-        latitude: number;
-        longitude: number;
-      }[];
-    };
-    return (body.results ?? []).map((r) => ({
-      name: r.name,
-      // La comuna (admin2) dice más que la región para ubicar el lugar
-      region: [r.admin2, r.admin1].filter(Boolean).join(', ') || null,
-      country: r.country ?? null,
-      latitude: r.latitude,
-      longitude: r.longitude,
-    }));
   }
 
   private summarize(hours: ForecastHour[]): WeatherConditions {

@@ -6,14 +6,14 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { WeatherService } from '../weather/weather.service';
+import { GeocodingService } from './geocoding.service';
 import { CreatePlaceDto, UpdatePlaceDto } from './dto';
 
 @Injectable()
 export class PlacesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly weather: WeatherService,
+    private readonly geocoding: GeocodingService,
   ) {}
 
   findAll() {
@@ -59,12 +59,24 @@ export class PlacesService {
 
   async geocode(query: string) {
     try {
-      return await this.weather.geocode(query);
+      return await this.geocoding.search(query);
     } catch {
-      throw new BadGatewayException(
-        'El buscador de ubicaciones no responde. Inténtalo más tarde o escribe las coordenadas.',
-      );
+      throw this.unavailable();
     }
+  }
+
+  async reverse(latitude: number, longitude: number) {
+    try {
+      return await this.geocoding.reverse(latitude, longitude);
+    } catch {
+      throw this.unavailable();
+    }
+  }
+
+  private unavailable() {
+    return new BadGatewayException(
+      'El buscador de direcciones no responde. Marca el lugar en el mapa o inténtalo más tarde.',
+    );
   }
 
   async findOne(id: string) {

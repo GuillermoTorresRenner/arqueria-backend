@@ -20,6 +20,7 @@ import {
   CreateActivityDto,
   CreatePlaceDto,
   GeocodeQueryDto,
+  ReverseGeocodeDto,
   UpcomingQueryDto,
   UpdateActivityDto,
   UpdatePlaceDto,
@@ -40,11 +41,17 @@ export class PlacesController {
 
   @Get('geocode')
   @ApiOperation({
-    summary: 'Buscar coordenadas por nombre',
-    description: 'Ciudades, comunas y localidades (Open-Meteo).',
+    summary: 'Buscar direcciones y lugares',
+    description: 'OpenStreetMap (Nominatim), acotado al país del club.',
   })
   geocode(@Query() { q }: GeocodeQueryDto) {
     return this.placesService.geocode(q);
+  }
+
+  @Get('reverse')
+  @ApiOperation({ summary: 'Dirección de un punto marcado en el mapa' })
+  reverse(@Query() { lat, lon }: ReverseGeocodeDto) {
+    return this.placesService.reverse(lat, lon);
   }
 
   @Post()
