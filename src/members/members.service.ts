@@ -165,13 +165,19 @@ export class MembersService {
     if (filter.categoryId) {
       where.categories = { some: { categoryId: filter.categoryId } };
     }
-    if (filter.search) {
+    if (filter.experience) where.experience = filter.experience;
+    // Cada palabra debe aparecer en el nombre, el apellido o el correo:
+    // «ana arquera» encuentra a Ana Arquera aunque ningún campo tenga ambas.
+    const words = filter.search?.trim().split(/\s+/).filter(Boolean) ?? [];
+    if (words.length) {
       where.user = {
-        OR: [
-          { name: { contains: filter.search, mode: 'insensitive' } },
-          { surname: { contains: filter.search, mode: 'insensitive' } },
-          { email: { contains: filter.search, mode: 'insensitive' } },
-        ],
+        AND: words.map((word) => ({
+          OR: [
+            { name: { contains: word, mode: 'insensitive' as const } },
+            { surname: { contains: word, mode: 'insensitive' as const } },
+            { email: { contains: word, mode: 'insensitive' as const } },
+          ],
+        })),
       };
     }
 

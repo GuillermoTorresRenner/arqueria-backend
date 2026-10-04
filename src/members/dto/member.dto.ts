@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { MemberStatus } from '@prisma/client';
+import { MemberStatus, ArcheryExperience } from '@prisma/client';
 import {
   IsArray,
   IsDateString,
@@ -60,10 +60,18 @@ export class FilterMemberDto {
   @IsEnum(MemberStatus)
   status?: MemberStatus;
 
-  @ApiPropertyOptional({ description: 'Busca por nombre, apellido o email' })
+  @ApiPropertyOptional({
+    description:
+      'Busca por nombre, apellido o email. Con varias palabras, cada una debe aparecer en alguno de esos campos («ana arquera»).',
+  })
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({ enum: ArcheryExperience })
+  @IsOptional()
+  @IsEnum(ArcheryExperience)
+  experience?: ArcheryExperience;
 
   @ApiPropertyOptional({ description: 'Filtra por categoría' })
   @IsOptional()
