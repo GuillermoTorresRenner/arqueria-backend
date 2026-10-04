@@ -53,20 +53,20 @@ const SECTIONS = [
         },
       },
       {
+        // Vacía hasta que el admin suba fotos desde el panel; GalleryBlock no
+        // renderiza nada mientras no haya imágenes.
+        type: BlockType.GALLERY,
+        order: 2,
+        data: { title: 'El club en imágenes', images: [] },
+      },
+      {
         // Los datos salen del calendario de actividades (tabla activities)
         type: BlockType.ACTIVITIES,
-        order: 2,
+        order: 3,
         data: {
           title: 'Próximas actividades',
           text: 'Jornadas de tiro, clases y salidas del club.',
         },
-      },
-      {
-        // Vacía hasta que el admin suba fotos desde el panel; GalleryBlock no
-        // renderiza nada mientras no haya imágenes.
-        type: BlockType.GALLERY,
-        order: 3,
-        data: { title: 'El club en imágenes', images: [] },
       },
     ],
   },
