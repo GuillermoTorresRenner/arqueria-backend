@@ -10,11 +10,11 @@ import { LoginDto } from './dto/login.dto';
 import { buildUserAvatarUrl } from '../users/user.helper';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
-import { RegisterDto } from './dto/register.dto';
 import { EmailService } from '../email/email.service';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoggerService } from '../logger/logger.service';
+import { EMAIL_VERIFICATION_TTL } from '../config/club';
 @Injectable()
 export class AuthService {
   constructor(
@@ -72,28 +72,7 @@ export class AuthService {
       );
     }
 
-    const jwtPayload = {
-      id: user.id,
-      email: user.email,
-      role: user.userRoles,
-      name: user.name,
-      surname: user.surname,
-    };
-
-    // Generar access token (1 hour) y refresh token (24h)
-    const accessToken = await this.jwtService.signAsync(jwtPayload, {
-      expiresIn: '1h',
-    });
-    const refreshToken = await this.jwtService.signAsync(
-      { id: user.id },
-      { expiresIn: '24h' },
-    );
-
-    // Guardar refresh token en la base de datos
-    await this.usersService.updateRefreshToken(user.id, refreshToken);
-
-    // Actualizar última conexión
-    await this.usersService.updateLastConnection(user.id);
+    const session = await this.issueSession(user);
 
     // Log de login exitoso
     await this.loggerService.log({
@@ -106,22 +85,113 @@ export class AuthService {
       description: `Usuario: ${user.name} ${user.surname}, Email: ${user.email}, Rol: ${user.userRoles}`,
     });
 
-    // Formatear datos del usuario para la respuesta
-    const userData = await this.formatUserDataForResponse(user);
+    return session;
+  }
+
+  /// Emite access + refresh token, guarda el refresh y actualiza la última
+  /// conexión. Lo comparten el login y la validación del correo.
+  private async issueSession(user: {
+    id: string;
+    email: string;
+    userRoles: string;
+    name: string | null;
+    surname: string | null;
+  }) {
+    const accessToken = await this.jwtService.signAsync(
+      {
+        id: user.id,
+        email: user.email,
+        role: user.userRoles,
+        name: user.name,
+        surname: user.surname,
+      },
+      { expiresIn: '1h' },
+    );
+    const refreshToken = await this.jwtService.signAsync(
+      { id: user.id },
+      { expiresIn: '24h' },
+    );
+    await this.usersService.updateRefreshToken(user.id, refreshToken);
+    await this.usersService.updateLastConnection(user.id);
 
     return {
       accessToken,
       refreshToken,
-      user: userData,
+      user: await this.formatUserDataForResponse(user),
     };
   }
 
-  async register(registerDto: RegisterDto) {
-    const userExists = await this.usersService.findByEmail(registerDto.email);
-    if (userExists) throw new BadRequestException('El usuario ya existe');
-    // usersService.register ya devuelve la forma pública (sin password) y
-    // dispara el correo de bienvenida.
-    return this.usersService.register(registerDto);
+  // ---------- Validación del correo (registro desde la web) ----------
+
+  /// La clave de firma incluye el hash de la contraseña actual: en cuanto el
+  /// usuario crea la suya, el hash cambia y el enlace deja de valer. Así el
+  /// enlace del correo es de un solo uso sin guardar nada en BD.
+  private verificationSecret(passwordHash: string) {
+    return `${process.env.JWT_SECRET}:verify:${passwordHash}`;
+  }
+
+  async createEmailVerificationToken(user: {
+    id: string;
+    email: string;
+    password: string;
+  }) {
+    return this.jwtService.signAsync(
+      { sub: user.id, email: user.email, type: 'email_verification' },
+      {
+        secret: this.verificationSecret(user.password),
+        expiresIn: EMAIL_VERIFICATION_TTL,
+      },
+    );
+  }
+
+  /// Valida el enlace del correo: fija la contraseña elegida, marca el correo
+  /// como verificado e inicia sesión.
+  async verifyEmail(token: string, password: string) {
+    const invalid = () =>
+      new BadRequestException(
+        'El enlace no es válido o ya se usó. Vuelve a inscribirte con el mismo correo para recibir uno nuevo.',
+      );
+
+    // decode no verifica la firma: solo sirve para saber de qué usuario es.
+    const decoded = this.jwtService.decode(token) as { sub?: string } | null;
+    if (!decoded?.sub) throw invalid();
+    const user = await this.prismaService.users.findUnique({
+      where: { id: decoded.sub },
+    });
+    if (!user) throw invalid();
+
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: this.verificationSecret(user.password),
+      });
+      if (
+        payload.type !== 'email_verification' ||
+        payload.email !== user.email
+      ) {
+        throw invalid();
+      }
+    } catch {
+      throw invalid();
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException(
+        'Usuario desactivado. Contacte al administrador',
+      );
+    }
+
+    const updated = await this.prismaService.users.update({
+      where: { id: user.id },
+      data: { password: await bcrypt.hash(password, 10), emailVerified: true },
+    });
+    await this.loggerService.log({
+      level: 'INFO',
+      message: 'Correo validado desde el enlace de bienvenida',
+      action: 'EMAIL_VERIFIED',
+      entityType: 'User',
+      entityId: user.id,
+      userId: user.id,
+    });
+    return this.issueSession(updated);
   }
 
   async refresh(userId: string, refreshToken: string) {

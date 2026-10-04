@@ -3,12 +3,10 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
-/// Invitación al grupo de WhatsApp del club. Es un enlace público: cualquiera
-/// con la URL puede entrar. Si se rota la invitación, basta con cambiar esta
-/// variable (o editarlo desde el panel de administración).
-const WHATSAPP_GROUP_URL =
-  process.env.SEED_WHATSAPP_URL ??
-  'https://chat.whatsapp.com/LkF1rxkIjBqL0qHTwA60au';
+/// Los botones de «unirse» apuntan a #unirse: el sitio abre el formulario de
+/// inscripción y solo entonces entrega la invitación de WhatsApp (que vive en
+/// la variable WHATSAPP_GROUP_URL del backend, ver src/config/club.ts).
+const JOIN_HREF = '#unirse';
 
 /// Contenido inicial de la landing de Galadhrym. Todo esto es editable
 /// después desde el panel de administración.
@@ -26,7 +24,7 @@ const SECTIONS = [
           subtitle: 'Asociación de arquería',
           text: 'Tiro con arco para todas las edades y niveles.',
           ctaLabel: 'Súmate al club',
-          ctaHref: '#contacto',
+          ctaHref: JOIN_HREF,
           image: null,
         },
       },
@@ -88,9 +86,9 @@ const SECTIONS = [
         order: 0,
         data: {
           title: '¿Quieres empezar?',
-          text: 'Súmate al grupo de WhatsApp y te contamos cómo participar en la próxima jornada.',
-          ctaLabel: 'Unirme al grupo de WhatsApp',
-          ctaHref: WHATSAPP_GROUP_URL,
+          text: 'Inscríbete y te sumamos al grupo de WhatsApp del club para contarte cómo participar en la próxima jornada.',
+          ctaLabel: 'Unirme al club',
+          ctaHref: JOIN_HREF,
           ctaIcon: 'whatsapp',
         },
       },
@@ -182,14 +180,25 @@ const SCORING_FORMATS = [
 async function main() {
   const adminEmail =
     process.env.SEED_ADMIN_EMAIL ?? 'torresrennerguillermo@gmail.com';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? '7Elcarro';
+  // Sin contraseña por defecto: el repo es público y cualquier valor escrito
+  // aquí sería la clave de un admin real. Solo hace falta la primera vez; si
+  // el admin ya existe, el upsert no la toca.
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const exists = await prisma.users.findUnique({
+    where: { email: adminEmail },
+  });
+  if (!exists && !adminPassword) {
+    throw new Error(
+      `Define SEED_ADMIN_PASSWORD para crear el admin ${adminEmail} (no hay clave por defecto).`,
+    );
+  }
 
   const admin = await prisma.users.upsert({
     where: { email: adminEmail },
     update: {},
     create: {
       email: adminEmail,
-      password: await bcrypt.hash(adminPassword, 10),
+      password: await bcrypt.hash(adminPassword!, 10),
       name: 'Administrador',
       surname: 'Galadhrym',
       userRoles: Role.ADMIN,

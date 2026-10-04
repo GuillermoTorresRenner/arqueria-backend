@@ -1,21 +1,136 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MemberStatus, Prisma } from '@prisma/client';
+import { MemberStatus, Prisma, Role } from '@prisma/client';
+import { randomBytes } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthService } from '../auth/auth.service';
+import { EmailService } from '../email/email.service';
+import { WHATSAPP_GROUP_URL } from '../config/club';
 import {
   CreateCategoryDto,
   CreateMemberDto,
   FilterMemberDto,
+  JoinClubDto,
   UpdateCategoryDto,
   UpdateMemberDto,
 } from './dto';
 
+/// Días de validez del enlace del correo (coherente con EMAIL_VERIFICATION_TTL).
+const VERIFICATION_DAYS = 7;
+
 @Injectable()
 export class MembersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
+    private readonly emailService: EmailService,
+  ) {}
+
+  // ---------- Inscripción pública («Súmate al club») ----------
+
+  /**
+   * Registra a una persona desde el formulario público y le envía el correo
+   * para validar su cuenta. Devuelve la invitación al grupo de WhatsApp: el
+   * sitio solo la muestra cuando el registro quedó guardado.
+   */
+  async join(dto: JoinClubDto) {
+    const result = { whatsappUrl: WHATSAPP_GROUP_URL, emailSent: true };
+    // Campo trampa relleno: es un bot. Se le responde como si nada para no
+    // darle pistas, sin guardar ni enviar correo.
+    if (dto.website) return result;
+
+    const birthDate = this.parseBirthDate(dto.birthDate);
+    const consentAt = new Date();
+    const memberData = {
+      birthDate,
+      experience: dto.experience,
+      marketingConsent: true,
+      marketingConsentAt: consentAt,
+    };
+
+    const existing = await this.prisma.users.findUnique({
+      where: { email: dto.email },
+    });
+
+    // Una cuenta validada, o del equipo (admin/juez), no se toca desde un
+    // formulario público: el enlace del correo permite fijar la contraseña.
+    if (
+      existing &&
+      (existing.emailVerified || existing.userRoles !== Role.MEMBER)
+    ) {
+      throw new ConflictException(
+        'Ya hay una cuenta con este correo. Inicia sesión para entrar.',
+      );
+    }
+
+    let user: { id: string; email: string; password: string };
+    try {
+      if (existing) {
+        // Se inscribió antes pero no validó: se actualizan sus datos y se le
+        // reenvía el correo (sirve también para pedir un enlace nuevo).
+        user = await this.prisma.users.update({
+          where: { id: existing.id },
+          data: {
+            name: dto.name,
+            surname: dto.surname,
+            member: {
+              upsert: { create: memberData, update: memberData },
+            },
+          },
+        });
+      } else {
+        user = await this.prisma.users.create({
+          data: {
+            email: dto.email,
+            name: dto.name,
+            surname: dto.surname,
+            userRoles: Role.MEMBER,
+            emailVerified: false,
+            // Contraseña aleatoria que nadie conoce: la cuenta no permite
+            // entrar hasta que la persona crea la suya desde el correo.
+            password: await bcrypt.hash(randomBytes(32).toString('hex'), 10),
+            member: { create: memberData },
+          },
+        });
+      }
+    } catch (error) {
+      // Dos envíos simultáneos con el mismo correo
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Ya hay una cuenta con este correo. Inicia sesión para entrar.',
+        );
+      }
+      throw error;
+    }
+
+    const verifyToken =
+      await this.authService.createEmailVerificationToken(user);
+    result.emailSent = await this.emailService.sendJoinWelcomeEmail({
+      to: user.email,
+      name: dto.name,
+      verifyToken,
+      validDays: VERIFICATION_DAYS,
+    });
+    return result;
+  }
+
+  /// Fecha AAAA-MM-DD a medianoche UTC, entre 4 y 110 años de edad.
+  private parseBirthDate(value: string) {
+    const date = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+    const age = (Date.now() - date.getTime()) / (365.25 * 24 * 3600 * 1000);
+    if (Number.isNaN(date.getTime()) || age < 4 || age > 110) {
+      throw new BadRequestException('Revisa la fecha de nacimiento');
+    }
+    return date;
+  }
 
   // ---------- Socios ----------
 

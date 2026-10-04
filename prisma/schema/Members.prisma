@@ -13,6 +13,12 @@ model Member {
   /// Vigencia de la membresía; null = sin vencimiento registrado
   membershipEnd DateTime?
   notes         String?
+  /// Experiencia declarada al inscribirse desde la web
+  experience    ArcheryExperience?
+  /// Aceptó recibir comunicaciones por email. Se guarda cuándo, como prueba
+  /// del consentimiento.
+  marketingConsent   Boolean   @default(false)
+  marketingConsentAt DateTime?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -23,6 +29,13 @@ model Member {
 
   @@index([status])
   @@map("members")
+}
+
+enum ArcheryExperience {
+  NONE          /// nunca ha tirado
+  BEGINNER      /// lo ha probado alguna vez
+  INTERMEDIATE  /// practica con regularidad
+  ADVANCED      /// compite o tiene experiencia avanzada
 }
 
 enum MemberStatus {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { WHATSAPP_GROUP_URL } from '../config/club';
 import * as nodemailer from 'nodemailer';
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
@@ -240,6 +241,73 @@ export class EmailService {
       });
       console.error(
         `No se pudo enviar el email de bienvenida a ${to}:`,
+        error.message,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Bienvenida tras inscribirse desde la web, con el enlace para validar el
+   * correo y crear la contraseña. Como sendWelcomeEmail, no lanza: el registro
+   * ya está guardado y quien llama decide qué decirle al usuario.
+   */
+  async sendJoinWelcomeEmail(params: {
+    to: string;
+    name: string;
+    verifyToken: string;
+    validDays: number;
+  }): Promise<boolean> {
+    const { to, name, verifyToken, validDays } = params;
+    const brand = { ...this.brand(), whatsappUrl: WHATSAPP_GROUP_URL };
+    // El token va en el fragmento (#), no en la query: así no viaja al
+    // servidor del frontend ni queda en sus logs de acceso.
+    const verifyUrl = `${brand.frontendUrl}/bienvenida#token=${encodeURIComponent(verifyToken)}`;
+
+    try {
+      const html = this.renderTemplate('join-welcome', {
+        ...brand,
+        firstName: name,
+        verifyUrl,
+        validDays,
+      });
+      await this.transporter.sendMail({
+        from: `"${brand.companyName}" <${brand.supportEmail}>`,
+        to,
+        subject: `Valida tu correo para entrar a ${brand.companyName}`,
+        html,
+        text: [
+          `¡Gracias por sumarte, ${name}!`,
+          '',
+          `Recibimos tu inscripción en ${brand.companyName}. Para activar tu cuenta,`,
+          'valida tu correo y crea tu contraseña en este enlace:',
+          verifyUrl,
+          '',
+          `El enlace vale ${validDays} días y sirve una sola vez.`,
+          '',
+          `Grupo de WhatsApp del club: ${brand.whatsappUrl}`,
+          '',
+          `Recibes este correo porque te inscribiste en ${brand.companyName} y`,
+          'aceptaste recibir comunicaciones del club por email.',
+        ].join('\n'),
+      });
+      await this.loggerService.logEmailEvent({
+        email: to,
+        type: 'join_welcome',
+        status: 'success',
+        userName: name,
+      });
+      return true;
+    } catch (error) {
+      await this.loggerService.logEmailEvent({
+        email: to,
+        type: 'join_welcome',
+        status: 'error',
+        userName: name,
+        error: error.message,
+      });
+      console.error(
+        `No se pudo enviar el correo de bienvenida a ${to}:`,
         error.message,
       );
       return false;

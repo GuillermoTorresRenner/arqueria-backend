@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
@@ -9,7 +10,10 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 async function bootstrap() {
   // Directory initialization omitted in simplified boilerplate.
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Detrás de nginx-proxy-manager: sin esto todas las peticiones llegan con la
+  // IP del proxy y el límite por IP de los endpoints públicos sería común.
+  app.set('trust proxy', 1);
   app.useWebSocketAdapter(new IoAdapter(app));
   app.setGlobalPrefix('api'); // Agrega esta línea para establecer el prefijo global
 

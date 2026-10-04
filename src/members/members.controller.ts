@@ -7,7 +7,9 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { MemberStatus } from '@prisma/client';
 import { ActiveUser, ActiveUserData, Auth, Roles } from '../auth';
@@ -16,6 +18,7 @@ import {
   CreateCategoryDto,
   CreateMemberDto,
   FilterMemberDto,
+  JoinClubDto,
   UpdateCategoryDto,
   UpdateMemberDto,
 } from './dto';
@@ -24,6 +27,19 @@ import {
 @Controller('members')
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
+
+  @Post('join')
+  @UseGuards(ThrottlerGuard)
+  // Público y envía correos: 5 intentos por IP cada 10 minutos
+  @Throttle({ default: { limit: 5, ttl: 10 * 60 * 1000 } })
+  @ApiOperation({
+    summary: 'Inscripción pública («Súmate al club»)',
+    description:
+      'Crea el usuario y la ficha de socio (PENDING) y envía el correo para validar la cuenta. Devuelve la invitación al grupo de WhatsApp.',
+  })
+  join(@Body() dto: JoinClubDto) {
+    return this.membersService.join(dto);
+  }
 
   @Get('categories')
   @ApiOperation({

@@ -10,10 +10,12 @@ import {
   Res,
   NotFoundException,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { Auth } from './decorators/auth.decorator';
@@ -27,43 +29,48 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly userService: UsersService,
   ) {}
-  @ApiBearerAuth()
-  @Post('register')
-  async register(@Body() registerDto: RegisterDto) {
-    try {
-      const isUserRegistered = await this.userService.findByEmail(
-        registerDto.email,
-      );
-      if (isUserRegistered) {
-        throw new BadRequestException('Usuario ya registrado');
-      }
-      const newUser = await this.authService.register(registerDto);
-      return { message: 'Usuario registrado exitosamente', user: newUser };
-    } catch (error) {
-      throw new InternalServerErrorException(
-        'Error al registrar usuario',
-        error.message,
-      );
-    }
+  /// Enlace del correo de bienvenida: fija la contraseña, valida el correo e
+  /// inicia sesión. Reemplaza al antiguo POST /auth/register público, que
+  /// dejaba a cualquiera crearse una cuenta con el rol que quisiera (ADMIN
+  /// incluido); las altas públicas pasan por POST /members/join.
+  @Post('verify-email')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 10 * 60 * 1000 } })
+  async verifyEmail(@Body() dto: VerifyEmailDto, @Res() res) {
+    const session = await this.authService.verifyEmail(dto.token, dto.password);
+    this.setSessionCookies(res, session);
+    return res
+      .status(200)
+      .json({ message: 'Correo validado', user: session.user });
   }
+
+  private setSessionCookies(
+    res: any,
+    {
+      accessToken,
+      refreshToken,
+    }: { accessToken: string; refreshToken: string },
+  ) {
+    res.cookie('token', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 5 * 60 * 1000,
+    });
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+  }
+
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Req() req, @Res() res) {
     try {
       const loginResult = await this.authService.login(loginDto);
-      const { accessToken, refreshToken, user } = loginResult;
-
-      res.cookie('token', accessToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        maxAge: 5 * 60 * 1000,
-      });
-      res.cookie('refreshToken', refreshToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'strict',
-        maxAge: 24 * 60 * 60 * 1000,
-      });
+      const { user } = loginResult;
+      this.setSessionCookies(res, loginResult);
       return res.status(200).json({
         message: 'Login exitoso',
         user,

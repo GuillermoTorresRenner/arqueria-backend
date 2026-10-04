@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { join } from 'path';
 
 import { UsersModule } from './users/users.module';
@@ -26,6 +27,9 @@ import { ScoringModule } from './scoring/scoring.module';
     }),
     // Habilitar tareas programadas
     ScheduleModule.forRoot(),
+    // Límite de peticiones. No es global: solo lo aplican los endpoints
+    // públicos que lo piden con @UseGuards(ThrottlerGuard) + @Throttle.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     UsersModule,
     AuthModule,
     PrismaModule,
