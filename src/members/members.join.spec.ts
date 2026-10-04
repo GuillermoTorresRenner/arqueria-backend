@@ -36,7 +36,9 @@ describe('MembersService.join', () => {
       validity: jest.fn(() => '7 días'),
     };
     email = { sendJoinWelcomeEmail: jest.fn().mockResolvedValue(true) };
-    service = new MembersService(prisma, auth, email);
+    service = new MembersService(prisma, auth, email, {
+      removeFile: jest.fn(),
+    } as any);
   });
 
   it('crea usuario MEMBER sin validar con su ficha y consentimiento', async () => {

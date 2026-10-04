@@ -9,7 +9,8 @@ model Member {
   birthDate     DateTime?
   phone         String?
   joinedAt      DateTime     @default(now())
-  status        MemberStatus @default(PENDING)
+  /// Los socios no requieren aprobación: entran activos al inscribirse
+  status        MemberStatus @default(ACTIVE)
   /// Vigencia de la membresía; null = sin vencimiento registrado
   membershipEnd DateTime?
   notes         String?
@@ -39,7 +40,7 @@ enum ArcheryExperience {
 }
 
 enum MemberStatus {
-  PENDING  /// registrado, aún no aprobado por un admin
+  PENDING  /// en desuso: los socios ya no requieren aprobación (se migraron a ACTIVE)
   ACTIVE
   SUSPENDED
   INACTIVE

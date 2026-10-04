@@ -10,6 +10,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountTokensService } from '../account-tokens/account-tokens.service';
 import { EmailService } from '../email/email.service';
+import { UploadService } from '../upload/upload.service';
 import { WHATSAPP_GROUP_URL } from '../config/club';
 import {
   CreateCategoryDto,
@@ -26,6 +27,7 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly accountTokens: AccountTokensService,
     private readonly emailService: EmailService,
+    private readonly uploadService: UploadService,
   ) {}
 
   // ---------- Inscripción pública («Súmate al club») ----------
@@ -237,10 +239,51 @@ export class MembersService {
     });
   }
 
+  /**
+   * Elimina a un socio: su cuenta y su ficha (y su avatar del disco).
+   *
+   * Si ya participó en torneos se rechaza: inscripciones y puntajes cuelgan
+   * del socio en cascada y borrarlo alteraría resultados y rankings ya
+   * publicados. En ese caso se suspende. Si la cuenta es del equipo (admin o
+   * juez) solo se borra la ficha de socio, no el acceso al panel.
+   */
   async remove(id: string) {
-    await this.findOne(id);
+    const member = await this.prisma.member.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, userRoles: true, avatar: true } },
+        _count: { select: { registrations: true, scores: true } },
+      },
+    });
+    if (!member) throw new NotFoundException('Socio no encontrado');
+
+    const { registrations, scores } = member._count;
+    if (registrations > 0 || scores > 0) {
+      throw new ConflictException(
+        `No se puede eliminar: tiene ${registrations} inscripción(es) y ${scores} serie(s) puntuada(s) en torneos. Suspéndelo para conservar los resultados.`,
+      );
+    }
+
+    if (member.user.userRoles === Role.MEMBER) {
+      // Borra la cuenta; la ficha cae por onDelete: Cascade
+      await this.prisma.users.delete({ where: { id: member.user.id } });
+      await this.removeAvatar(member.user.avatar);
+      return { message: 'Socio eliminado' };
+    }
     await this.prisma.member.delete({ where: { id } });
-    return { message: 'Socio eliminado' };
+    return {
+      message: 'Ficha de socio eliminada (la cuenta del equipo se mantiene)',
+    };
+  }
+
+  /// El avatar se guarda como `user_<id>.webp` o `users_avatar/user_<id>.webp`.
+  private async removeAvatar(avatar: string | null) {
+    if (!avatar) return;
+    const file = avatar.replace(/^users_avatar\//, '');
+    if (!/^[\w-]+\.webp$/.test(file)) return; // nunca rutas arbitrarias
+    await this.uploadService.removeFile(`users_avatar/${file}`).catch(() => {
+      /* si ya no existe, no hay nada que limpiar */
+    });
   }
 
   // ---------- Categorías ----------

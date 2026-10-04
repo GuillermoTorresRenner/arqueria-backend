@@ -35,7 +35,7 @@ export class MembersController {
   @ApiOperation({
     summary: 'Inscripción pública («Súmate al club»)',
     description:
-      'Crea el usuario y la ficha de socio (PENDING) y envía el correo para validar la cuenta. Devuelve la invitación al grupo de WhatsApp.',
+      'Crea el usuario y la ficha de socio (activa, sin aprobación) y envía el correo para crear la contraseña. Devuelve la invitación al grupo de WhatsApp.',
   })
   join(@Body() dto: JoinClubDto) {
     return this.membersService.join(dto);
