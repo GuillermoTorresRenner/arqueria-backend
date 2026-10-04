@@ -1,0 +1,62 @@
+/// Calendario de actividades del club (jornadas de tiro, clases, salidas).
+/// El admin las agenda en un lugar guardado; los socios confirman asistencia.
+
+/// Lugares reutilizables: se eligen desde un desplegable al crear una
+/// actividad. Las coordenadas sirven para el pronóstico del tiempo.
+model Place {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  address   String?
+  latitude  Float?
+  longitude Float?
+  /// Un lugar en desuso no se ofrece al crear actividades, pero las antiguas
+  /// lo conservan.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities Activity[]
+
+  @@map("places")
+}
+
+model Activity {
+  id              String    @id @default(cuid())
+  title           String
+  startsAt        DateTime
+  endsAt          DateTime
+  placeId         String?
+  /// HTML del editor (opcional): qué traer, cómo llegar, etc.
+  recommendations String?
+  /// Decisión de avisar a los socios por correo. Persiste: si al crearla se
+  /// dijo que no, se puede activar más adelante desde la edición.
+  notifyMembers   Boolean   @default(false)
+  /// Último aviso enviado y a cuántos socios llegó
+  notifiedAt      DateTime?
+  notifiedCount   Int?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  /// Restrict: un lugar con actividades no se borra, se desactiva
+  place       Place?               @relation(fields: [placeId], references: [id], onDelete: Restrict)
+  createdBy   Users?               @relation("ActivityCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  attendances ActivityAttendance[]
+
+  @@index([startsAt])
+  @@map("activities")
+}
+
+/// Confirmación de asistencia de un socio a una actividad
+model ActivityAttendance {
+  activityId String
+  memberId   String
+  createdAt  DateTime @default(now())
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  member   Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, memberId])
+  @@index([memberId])
+  @@map("activity_attendances")
+}

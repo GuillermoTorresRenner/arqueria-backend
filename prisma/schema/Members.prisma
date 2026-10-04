@@ -27,6 +27,7 @@ model Member {
   categories   MemberCategory[]
   registrations Registration[]
   scores       Score[]
+  attendances  ActivityAttendance[]
 
   @@index([status])
   @@map("members")

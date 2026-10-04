@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { WHATSAPP_GROUP_URL } from '../config/club';
+import { CLUB_TIMEZONE, WHATSAPP_GROUP_URL } from '../config/club';
+import type { ActivityWeather } from '../weather/weather.service';
 import * as nodemailer from 'nodemailer';
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
@@ -264,6 +265,168 @@ export class EmailService {
       );
       return false;
     }
+  }
+
+  /**
+   * Aviso de una actividad del calendario a un socio, con el pronóstico si
+   * ya está disponible. No lanza: devuelve si salió.
+   */
+  async sendActivityEmail(params: {
+    to: string;
+    name?: string | null;
+    activity: {
+      title: string;
+      startsAt: Date;
+      endsAt: Date;
+      recommendations: string | null;
+      place: {
+        name: string;
+        address: string | null;
+        latitude: number | null;
+        longitude: number | null;
+      } | null;
+    };
+    weather: ActivityWeather;
+  }): Promise<boolean> {
+    const { to, activity, weather } = params;
+    const brand = this.brand();
+    const name = params.name || 'arquero';
+    const when = this.formatSchedule(activity.startsAt, activity.endsAt);
+    const place = activity.place;
+    const mapUrl = !place
+      ? null
+      : place.latitude != null && place.longitude != null
+        ? `https://www.google.com/maps/search/?api=1&query=${place.latitude},${place.longitude}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.address || place.name)}`;
+    const forecast = weather.available
+      ? {
+          ...(weather.during ?? weather.day),
+          statusLabel: weather.statusLabel,
+          reasons: weather.reasons.join(' · '),
+          color: { good: '#2f6b3a', caution: '#9a6a00', bad: '#a81e24' }[
+            weather.status
+          ],
+        }
+      : null;
+    const confirmUrl = `${brand.frontendUrl}/mi-cuenta#actividades`;
+
+    try {
+      const html = this.renderTemplate('activity', {
+        ...brand,
+        firstName: name,
+        title: activity.title,
+        date: when.date,
+        time: when.time,
+        place,
+        mapUrl,
+        recommendations: activity.recommendations
+          ? this.safeEmailHtml(activity.recommendations)
+          : null,
+        forecast,
+        confirmUrl,
+      });
+      await this.transporter.sendMail({
+        from: `"${brand.companyName}" <${brand.supportEmail}>`,
+        to,
+        subject: `${activity.title} · ${when.date}`,
+        html,
+        text: [
+          `Hola, ${name}:`,
+          '',
+          `Nueva actividad en ${brand.companyName}: ${activity.title}`,
+          `Cuándo: ${when.date}, ${when.time}`,
+          place
+            ? `Dónde: ${place.name}${place.address ? ` (${place.address})` : ''}`
+            : '',
+          forecast
+            ? `Pronóstico: ${forecast.description}, ${forecast.tempMin}–${forecast.tempMax} °C, lluvia ${forecast.precipitationProbability} %, viento hasta ${forecast.gustsMax} km/h. ${forecast.statusLabel}.`
+            : '',
+          activity.recommendations
+            ? `\nRecomendaciones:\n${this.htmlToText(activity.recommendations)}`
+            : '',
+          '',
+          `Confirma tu asistencia: ${confirmUrl}`,
+          '',
+          `Recibes este correo porque eres socio de ${brand.companyName} y`,
+          'aceptaste recibir comunicaciones del club por email.',
+        ]
+          .filter((line, i, all) => line !== '' || all[i - 1] !== '')
+          .join('\n'),
+      });
+      await this.loggerService.logEmailEvent({
+        email: to,
+        type: 'activity_notice',
+        status: 'success',
+        userName: name,
+      });
+      return true;
+    } catch (error) {
+      await this.loggerService.logEmailEvent({
+        email: to,
+        type: 'activity_notice',
+        status: 'error',
+        userName: name,
+        error: error.message,
+      });
+      console.error(
+        `No se pudo enviar el aviso de actividad a ${to}:`,
+        error.message,
+      );
+      return false;
+    }
+  }
+
+  /// «sábado 11 de octubre» y «10:00 a 13:00», en la zona horaria del club
+  private formatSchedule(startsAt: Date, endsAt: Date) {
+    const date = new Intl.DateTimeFormat('es-CL', {
+      timeZone: CLUB_TIMEZONE,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(startsAt);
+    const hour = new Intl.DateTimeFormat('es-CL', {
+      timeZone: CLUB_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    return {
+      date: date.charAt(0).toUpperCase() + date.slice(1),
+      time: `${hour.format(startsAt)} a ${hour.format(endsAt)}`,
+    };
+  }
+
+  /**
+   * El HTML de las recomendaciones lo escribe el admin con el editor del
+   * panel. Aun así, en el correo se quitan scripts, estilos, iframes,
+   * manejadores de eventos y enlaces javascript: por si una sesión de admin
+   * fuera robada.
+   */
+  private safeEmailHtml(html: string) {
+    return new handlebars.SafeString(
+      html
+        .replace(/<(script|style|iframe|object|embed)[\s\S]*?<\/\1\s*>/gi, '')
+        .replace(/<(script|style|iframe|object|embed)\b[^>]*\/?>/gi, '')
+        .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+        .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1="#"'),
+    );
+  }
+
+  private htmlToText(html: string) {
+    return html
+      .replace(/<(script|style)[\s\S]*?<\/\1\s*>/gi, '')
+      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<\/(p|li|h2|h3|blockquote)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**

@@ -11,7 +11,8 @@ export interface EmailLog {
     | 'subscription_expiry_warning'
     | 'autoregister'
     | 'join_welcome'
-    | 'account_invite';
+    | 'account_invite'
+    | 'activity_notice';
   status: 'success' | 'error';
   userName?: string;
   customerName?: string;

@@ -21,6 +21,7 @@ model Users {
   groupDraws       GroupDraw[]
   scoresRecorded   Score[]          @relation("ScoreRecordedBy")
   scoresValidated  Score[]          @relation("ScoreValidatedBy")
+  activitiesCreated Activity[]      @relation("ActivityCreatedBy")
 
   @@map("users")
 }

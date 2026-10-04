@@ -17,6 +17,7 @@ import { ContentModule } from './content/content.module';
 import { MembersModule } from './members/members.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { ScoringModule } from './scoring/scoring.module';
+import { ActivitiesModule } from './activities/activities.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ScoringModule } from './scoring/scoring.module';
     MembersModule,
     TournamentsModule,
     ScoringModule,
+    ActivitiesModule,
   ],
   controllers: [],
   providers: [PrismaService],

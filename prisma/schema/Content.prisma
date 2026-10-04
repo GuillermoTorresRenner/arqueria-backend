@@ -40,4 +40,6 @@ enum BlockType {
   CARDS
   CTA
   FAQ
+  /// Próximas actividades del calendario (los datos salen de Activity)
+  ACTIVITIES
 }
