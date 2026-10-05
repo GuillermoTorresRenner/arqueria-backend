@@ -21,7 +21,7 @@ const SECTIONS = [
         order: 0,
         data: {
           title: 'Galadhrym',
-          subtitle: 'Asociación de arquería',
+          subtitle: 'Comunidad de arquería',
           text: 'Tiro con arco para todas las edades y niveles.',
           ctaLabel: 'Súmate al club',
           ctaHref: JOIN_HREF,
@@ -35,7 +35,7 @@ const SECTIONS = [
           title: 'Qué hacemos',
           items: [
             {
-              title: 'Escuela de arquería',
+              title: 'Taller de arquería',
               text: 'Clases para principiantes, sin experiencia previa ni equipo propio.',
               icon: 'target',
             },

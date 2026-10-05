@@ -67,7 +67,7 @@ export class PaymentInfoDto {
   @Transform(trim)
   accountNumber?: string;
 
-  @ApiPropertyOptional({ example: 'Asociación Galadhrym' })
+  @ApiPropertyOptional({ example: 'Comunidad Galadhrym' })
   @IsOptional()
   @IsString()
   @MaxLength(120)
