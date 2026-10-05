@@ -199,6 +199,9 @@ export class ActivityTournamentsService {
         'Tu membresía no está activa: no puedes inscribirte',
       );
     }
+    if (activity.cancelledAt) {
+      throw new BadRequestException('El torneo está cancelado');
+    }
     if (activity.endsAt.getTime() < Date.now()) {
       throw new BadRequestException('El torneo ya terminó');
     }

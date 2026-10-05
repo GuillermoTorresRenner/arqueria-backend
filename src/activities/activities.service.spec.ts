@@ -21,8 +21,10 @@ describe('ActivitiesService', () => {
         findUnique: jest.fn(async () => activity),
         findUniqueOrThrow: jest.fn(async () => activity),
         delete: jest.fn(),
+        count: jest.fn(async () => 1),
       },
       place: { findUnique: jest.fn() },
+      tournament: { update: jest.fn() },
       member: {
         findMany: jest.fn(async (_args?: any) => [
           { user: { email: 'a@x.cl', name: 'Ana' } },
@@ -36,7 +38,10 @@ describe('ActivitiesService', () => {
         count: jest.fn(async () => 1),
       },
     };
-    const email = { sendActivityEmail: jest.fn(async () => true) };
+    const email = {
+      sendActivityEmail: jest.fn(async () => true),
+      sendActivityCancelledEmail: jest.fn(async () => true),
+    };
     const weather = {
       forActivity: jest.fn(async () => ({ available: false })),
     };
@@ -150,6 +155,76 @@ describe('ActivitiesService', () => {
     await service.setAttendance('a1', 'u1', false);
     expect(prisma.activityAttendance.deleteMany).toHaveBeenCalledWith({
       where: { activityId: 'a1', memberId: 'm1' },
+    });
+  });
+
+  it('cancelar guarda la causal y cierra el torneo, sin borrar la actividad', async () => {
+    const { prisma, service, activity } = build();
+    prisma.activity.findUnique.mockResolvedValueOnce({
+      ...activity,
+      tournamentId: 't1',
+    } as any);
+    const r = await service.cancel('a1', { reason: ' Lluvia ' });
+    const data = (prisma.activity.update.mock.calls as any)[0][0].data;
+    expect(data.cancellationReason).toBe('Lluvia');
+    expect(data.cancelledAt).toBeInstanceOf(Date);
+    expect(prisma.tournament.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { status: 'CANCELLED' },
+    });
+    expect(r.notification).toBeNull();
+    expect(prisma.activity.delete).not.toHaveBeenCalled();
+  });
+
+  it('sin anuncio previo, la cancelación solo avisa a quienes confirmaron', async () => {
+    const { prisma, email, service } = build();
+    const r = await service.cancel('a1', { notify: true });
+    expect(r.notification).toEqual({ recipients: 2 });
+    const where = (prisma.member.findMany.mock.calls as any)[0][0].where;
+    expect(where.OR[0]).toEqual({
+      attendances: { some: { activityId: 'a1' } },
+    });
+    await flush();
+    await flush();
+    expect(email.sendActivityCancelledEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it('no se confirma asistencia ni se avisa de una actividad cancelada', async () => {
+    const { prisma, service, activity } = build();
+    prisma.member.findUnique.mockResolvedValueOnce({
+      id: 'm1',
+      status: 'ACTIVE',
+    });
+    prisma.activity.findUnique.mockResolvedValueOnce({
+      ...activity,
+      cancelledAt: new Date(),
+    } as any);
+    await expect(service.setAttendance('a1', 'u1', true)).rejects.toThrow(
+      /cancelada/,
+    );
+    prisma.activity.findUniqueOrThrow.mockResolvedValueOnce({
+      ...activity,
+      cancelledAt: new Date(),
+    } as any);
+    await expect(service.notifyNow('a1')).rejects.toThrow(/cancelada/);
+  });
+
+  it('reactivar quita la cancelación y reabre el torneo', async () => {
+    const { prisma, service, activity } = build();
+    prisma.activity.findUnique.mockResolvedValueOnce({
+      ...activity,
+      cancelledAt: new Date(),
+      tournamentId: 't1',
+      tournament: { status: 'CANCELLED' },
+    } as any);
+    await service.restore('a1');
+    expect((prisma.activity.update.mock.calls as any)[0][0].data).toEqual({
+      cancelledAt: null,
+      cancellationReason: null,
+    });
+    expect(prisma.tournament.update).toHaveBeenCalledWith({
+      where: { id: 't1' },
+      data: { status: 'REGISTRATION_OPEN' },
     });
   });
 });

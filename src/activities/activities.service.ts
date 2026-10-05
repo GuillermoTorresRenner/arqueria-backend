@@ -10,11 +10,12 @@ import {
   MemberStatus,
   Prisma,
   RegistrationStatus,
+  TournamentStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { WeatherService } from '../weather/weather.service';
-import { CreateActivityDto, UpdateActivityDto } from './dto';
+import { CancelActivityDto, CreateActivityDto, UpdateActivityDto } from './dto';
 import {
   ActivityTournamentsService,
   PaymentInfo,
@@ -48,6 +49,8 @@ const PUBLIC_SELECT = {
   id: true,
   type: true,
   title: true,
+  cancelledAt: true,
+  cancellationReason: true,
   startsAt: true,
   endsAt: true,
   recommendations: true,
@@ -256,7 +259,7 @@ export class ActivitiesService {
     // La decisión persiste: si al crearla se dijo que no y ahora se marca,
     // el aviso sale en este momento. Si ya se avisó, no se repite solo.
     const notification =
-      activity.notifyMembers && !activity.notifiedAt
+      activity.notifyMembers && !activity.notifiedAt && !activity.cancelledAt
         ? await this.notify(id)
         : null;
     return { ...(await this.reload(id)), notification };
@@ -268,6 +271,59 @@ export class ActivitiesService {
     if (!exists) throw new NotFoundException('Actividad no encontrada');
     const notification = await this.notify(id);
     return { ...(await this.reload(id)), notification };
+  }
+
+  /**
+   * Cancela la actividad sin borrarla: sigue en el calendario marcada como
+   * cancelada, con su causal. Un torneo pasa a CANCELLED y no admite más
+   * inscripciones. Repetirla solo actualiza la causal.
+   */
+  async cancel(id: string, dto: CancelActivityDto) {
+    const current = await this.prisma.activity.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Actividad no encontrada');
+
+    await this.prisma.activity.update({
+      where: { id },
+      data: {
+        cancelledAt: current.cancelledAt ?? new Date(),
+        cancellationReason: dto.reason?.trim() || null,
+      },
+    });
+    if (current.tournamentId) {
+      await this.prisma.tournament.update({
+        where: { id: current.tournamentId },
+        data: { status: TournamentStatus.CANCELLED },
+      });
+    }
+
+    const notification = dto.notify ? await this.notifyCancellation(id) : null;
+    return { ...(await this.reload(id)), notification };
+  }
+
+  /// Deshace la cancelación; un torneo vuelve a abrir inscripciones
+  async restore(id: string) {
+    const current = await this.prisma.activity.findUnique({
+      where: { id },
+      include: { tournament: { select: { status: true } } },
+    });
+    if (!current) throw new NotFoundException('Actividad no encontrada');
+    if (!current.cancelledAt) {
+      throw new BadRequestException('La actividad no está cancelada');
+    }
+    await this.prisma.activity.update({
+      where: { id },
+      data: { cancelledAt: null, cancellationReason: null },
+    });
+    if (
+      current.tournamentId &&
+      current.tournament?.status === TournamentStatus.CANCELLED
+    ) {
+      await this.prisma.tournament.update({
+        where: { id: current.tournamentId },
+        data: { status: TournamentStatus.REGISTRATION_OPEN },
+      });
+    }
+    return { ...(await this.reload(id)), notification: null };
   }
 
   /// Un torneo se lleva su ficha, inscripciones y reglamentos en archivo
@@ -379,6 +435,10 @@ export class ActivitiesService {
         'En los torneos no se confirma asistencia: hay que inscribirse',
       );
     }
+    // Cancelar la propia asistencia sí se permite, aunque esté cancelada
+    if (attending && activity.cancelledAt) {
+      throw new BadRequestException('La actividad está cancelada');
+    }
     if (activity.endsAt.getTime() < Date.now()) {
       throw new BadRequestException('La actividad ya terminó');
     }
@@ -432,6 +492,11 @@ export class ActivitiesService {
     if (activity.endsAt.getTime() < Date.now()) {
       throw new BadRequestException(
         'La actividad ya terminó: no se puede avisar a los socios',
+      );
+    }
+    if (activity.cancelledAt) {
+      throw new BadRequestException(
+        'La actividad está cancelada: reactívala antes de avisar',
       );
     }
     const members = await this.prisma.member.findMany({
@@ -488,6 +553,70 @@ export class ActivitiesService {
     this.logger.log(
       `Aviso de «${activity.title}»: ${sent}/${recipients.length} correos enviados`,
     );
+  }
+
+  /**
+   * Aviso de cancelación. Si la actividad se había anunciado a todos, la
+   * cancelación también llega a todos; si no, solo a quienes confirmaron
+   * asistencia o se inscribieron (los demás no sabían de ella).
+   */
+  private async notifyCancellation(id: string) {
+    const activity = await this.prisma.activity.findUniqueOrThrow({
+      where: { id },
+      include: { place: true },
+    });
+    const activeMember = {
+      status: MemberStatus.ACTIVE,
+      user: { isActive: true },
+    };
+    const members = await this.prisma.member.findMany({
+      where: activity.notifiedAt
+        ? activeMember
+        : {
+            ...activeMember,
+            OR: [
+              { attendances: { some: { activityId: id } } },
+              ...(activity.tournamentId
+                ? [
+                    {
+                      registrations: {
+                        some: {
+                          tournamentId: activity.tournamentId,
+                          status: { not: RegistrationStatus.WITHDRAWN },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          },
+      select: { user: { select: { email: true, name: true } } },
+    });
+    const recipients = members.map((m) => m.user);
+
+    void (async () => {
+      let sent = 0;
+      const queue = [...recipients];
+      const worker = async () => {
+        for (let r = queue.shift(); r; r = queue.shift()) {
+          const ok = await this.emailService.sendActivityCancelledEmail({
+            to: r.email,
+            name: r.name,
+            activity,
+          });
+          if (ok) sent++;
+        }
+      };
+      await Promise.all(
+        Array.from({ length: SEND_CONCURRENCY }, () => worker()),
+      );
+      this.logger.log(
+        `Cancelación de «${activity.title}»: ${sent}/${recipients.length} correos enviados`,
+      );
+    })().catch((error) =>
+      this.logger.error(`Cancelación de «${activity.title}»: ${error.message}`),
+    );
+    return { recipients: recipients.length };
   }
 
   private reload(id: string) {

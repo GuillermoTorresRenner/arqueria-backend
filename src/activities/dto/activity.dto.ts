@@ -250,3 +250,24 @@ export class RegistrationStatusDto {
   @IsIn([RegistrationStatus.PENDING, RegistrationStatus.CONFIRMED])
   status: 'PENDING' | 'CONFIRMED';
 }
+
+export class CancelActivityDto {
+  @ApiPropertyOptional({
+    example: 'Suspendida por lluvia: la reagendaremos pronto.',
+    description: 'Causal que verán los socios (opcional)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  @Transform(trim)
+  reason?: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Avisar por correo: a todos los socios activos si la actividad se había anunciado; si no, a quienes confirmaron o se inscribieron.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  notify?: boolean;
+}

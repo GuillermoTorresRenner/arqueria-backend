@@ -27,6 +27,12 @@ interface PaymentInfoData {
   fees?: { label: string; amount: number }[];
 }
 
+const CANCELLED_LABEL: Record<string, string> = {
+  ACTIVITY: 'Actividad cancelada',
+  EVENT: 'Evento cancelado',
+  TOURNAMENT: 'Torneo cancelado',
+};
+
 /// Cómo se presenta cada tipo en los correos (mismos colores que el sitio)
 const ACTIVITY_KIND: Record<string, { eyebrow: string; color: string }> = {
   ACTIVITY: { eyebrow: 'Nueva actividad', color: '#2f6b8f' },
@@ -535,10 +541,54 @@ export class EmailService {
     });
   }
 
+  /// Aviso de que una actividad, evento o torneo se canceló
+  async sendActivityCancelledEmail(params: {
+    to: string;
+    name?: string | null;
+    activity: NoticeActivity & { cancellationReason: string | null };
+  }): Promise<boolean> {
+    const { to, activity } = params;
+    const name = params.name || 'arquero';
+    const when = this.formatSchedule(activity.startsAt, activity.endsAt);
+    const label = CANCELLED_LABEL[activity.type] ?? CANCELLED_LABEL.ACTIVITY;
+    return this.sendSimple({
+      to,
+      logType: 'activity_cancelled',
+      userName: name,
+      template: 'activity-cancelled',
+      subject: `${label}: ${activity.title} · ${when.date}`,
+      data: {
+        firstName: name,
+        label,
+        title: activity.title,
+        date: when.date,
+        time: when.time,
+        place: activity.place,
+        reason: activity.cancellationReason,
+        isTournament: activity.type === 'TOURNAMENT',
+        accountUrl: `${this.brand().frontendUrl}/mi-cuenta#actividades`,
+      },
+      text: [
+        `Hola, ${name}:`,
+        '',
+        `${label}: ${activity.title} (${when.date}, ${when.time}).`,
+        activity.cancellationReason
+          ? `Motivo: ${activity.cancellationReason}`
+          : '',
+        activity.type === 'TOURNAMENT'
+          ? 'Si ya pagaste la inscripción, te contactaremos para la devolución.'
+          : '',
+        '',
+        'Disculpa las molestias. Te avisaremos de las próximas actividades.',
+      ],
+    });
+  }
+
   /// Envío con plantilla y registro en el log. No lanza.
   private async sendSimple(params: {
     to: string;
-    logType: 'tournament_registration' | 'tournament_confirmed';
+    logType:
+      'tournament_registration' | 'tournament_confirmed' | 'activity_cancelled';
     userName: string;
     template: string;
     subject: string;

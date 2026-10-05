@@ -14,7 +14,8 @@ export interface EmailLog {
     | 'account_invite'
     | 'activity_notice'
     | 'tournament_registration'
-    | 'tournament_confirmed';
+    | 'tournament_confirmed'
+    | 'activity_cancelled';
   status: 'success' | 'error';
   userName?: string;
   customerName?: string;

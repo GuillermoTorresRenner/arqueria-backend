@@ -25,6 +25,7 @@ import {
 } from './activity-tournaments.service';
 import {
   ActivityRangeDto,
+  CancelActivityDto,
   CreateActivityDto,
   CreatePlaceDto,
   GeocodeQueryDto,
@@ -284,6 +285,26 @@ export class ActivitiesController {
   })
   notify(@Param('id') id: string) {
     return this.activitiesService.notifyNow(id);
+  }
+
+  @Post(':id/cancel')
+  @Auth([Roles.ADMIN])
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Cancelar actividad, evento o torneo',
+    description:
+      'Sigue visible en el calendario marcada como cancelada, con su causal. Opcionalmente avisa por correo.',
+  })
+  cancel(@Param('id') id: string, @Body() dto: CancelActivityDto) {
+    return this.activitiesService.cancel(id, dto);
+  }
+
+  @Post(':id/restore')
+  @Auth([Roles.ADMIN])
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reactivar una actividad cancelada' })
+  restore(@Param('id') id: string) {
+    return this.activitiesService.restore(id);
   }
 
   @Delete(':id')
