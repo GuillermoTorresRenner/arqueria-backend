@@ -59,15 +59,6 @@ const SECTIONS = [
         order: 2,
         data: { title: 'El club en imágenes', images: [] },
       },
-      {
-        // Los datos salen del calendario de actividades (tabla activities)
-        type: BlockType.ACTIVITIES,
-        order: 3,
-        data: {
-          title: 'Próximas actividades',
-          text: 'Jornadas de tiro, clases y salidas del club.',
-        },
-      },
     ],
   },
   {
@@ -81,6 +72,15 @@ const SECTIONS = [
         data: {
           title: 'Sobre el club',
           html: '<p>Galadhrym reúne a quienes practican tiro con arco en un espacio de formación, entrenamiento y competencia.</p>',
+        },
+      },
+      {
+        // Los datos salen del calendario de actividades (tabla activities)
+        type: BlockType.ACTIVITIES,
+        order: 1,
+        data: {
+          title: 'Próximas actividades',
+          text: 'Jornadas de tiro, clases y salidas del club.',
         },
       },
     ],
