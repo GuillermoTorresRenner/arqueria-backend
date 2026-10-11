@@ -47,7 +47,9 @@ describe('ActivityTournamentsService', () => {
       tournament,
     };
     const prisma: any = {
-      $transaction: jest.fn(async (fn: (tx: any) => unknown) => fn(prisma)),
+      $transaction: jest.fn(async (arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg),
+      ),
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
       activity: {
@@ -76,6 +78,26 @@ describe('ActivityTournamentsService', () => {
         delete: jest.fn(),
       },
       draw: { count: jest.fn(async () => 0) },
+      tournamentCategory: {
+        findMany: jest.fn(async (): Promise<any[]> => [
+          {
+            id: 'c1',
+            name: 'Tiro tradicional',
+            mode: 'SCORE',
+            scoringFormatId: 'f1',
+            _count: { registrations: 0, rounds: 0 },
+          },
+        ]),
+        create: jest.fn(async () => ({})),
+        update: jest.fn(async () => ({})),
+        deleteMany: jest.fn(async () => ({})),
+      },
+      scoringFormat: {
+        findMany: jest.fn(async () => [{ id: 'f1', isActive: true }]),
+      },
+      tournamentJudge: {
+        findMany: jest.fn(async () => [{ userId: 'j1' }]),
+      },
       matchEntry: { count: jest.fn(async () => 0) },
       tournament: {
         create: jest.fn(async () => ({ id: 't2' })),
@@ -272,6 +294,8 @@ describe('ActivityTournamentsService', () => {
       confirmedAt: null,
       confirmedById: null,
       member: { user: { email: 'ana@x.cl', name: 'Ana' } },
+      category: { name: 'Duelos' },
+      participant: { number: 4 },
       tournament: { activity },
     });
     const r = await service.setRegistrationStatus('r1', 'CONFIRMED', 'admin1');
@@ -279,7 +303,9 @@ describe('ActivityTournamentsService', () => {
     const data = prisma.registration.update.mock.calls[0][0].data;
     expect(data.confirmedById).toBe('admin1');
     expect(data.confirmedAt).toBeInstanceOf(Date);
-    expect(email.sendTournamentConfirmedEmail).toHaveBeenCalled();
+    expect(email.sendTournamentConfirmedEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ category: 'Duelos', number: 4 }),
+    );
   });
 
   it('un torneo con inscritos no puede pasar a ser actividad', async () => {
@@ -345,6 +371,98 @@ describe('ActivityTournamentsService', () => {
       }),
     ).rejects.toThrow(/desactivada/);
     expect(prisma.tournament.create).not.toHaveBeenCalled();
+  });
+
+  describe('categorías', () => {
+    const score = { mode: 'SCORE' as const, scoringFormatId: 'f1' };
+
+    it('crea las nuevas, actualiza las existentes y ordena según la lista', async () => {
+      const { prisma, service, activity } = build();
+      await service.sync(activity as any, {
+        categories: [
+          { name: 'Duelos', mode: 'KNOCKDOWN', targetsToWin: 3, judgeId: 'j1' },
+          { id: 'c1', name: 'Tiro tradicional', ...score, arrowsPerArcher: 6 },
+        ],
+      });
+      expect(prisma.tournamentCategory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          tournamentId: 't1',
+          name: 'Duelos',
+          order: 0,
+          mode: 'KNOCKDOWN',
+          scoringFormatId: null,
+          judgeId: 'j1',
+        }),
+      });
+      expect(prisma.tournamentCategory.update).toHaveBeenLastCalledWith({
+        where: { id: 'c1' },
+        data: expect.objectContaining({ order: 1, arrowsPerArcher: 6 }),
+      });
+      expect(prisma.tournamentCategory.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [] } },
+      });
+    });
+
+    it('no quita una categoría con inscritos', async () => {
+      const { prisma, service, activity } = build();
+      prisma.tournamentCategory.findMany.mockResolvedValueOnce([
+        {
+          id: 'c1',
+          name: 'Tiro tradicional',
+          mode: 'SCORE',
+          _count: { registrations: 2, rounds: 0 },
+        },
+      ]);
+      await expect(
+        service.sync(activity as any, {
+          categories: [{ name: 'Duelos', mode: 'KNOCKDOWN' }],
+        }),
+      ).rejects.toThrow(/tiene inscritos/);
+      expect(prisma.tournamentCategory.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('no cambia la modalidad de una categoría con cuadro', async () => {
+      const { prisma, service, activity } = build();
+      prisma.tournamentCategory.findMany.mockResolvedValueOnce([
+        {
+          id: 'c1',
+          name: 'Tiro tradicional',
+          mode: 'SCORE',
+          _count: { registrations: 4, rounds: 1 },
+        },
+      ]);
+      await expect(
+        service.sync(activity as any, {
+          categories: [
+            { id: 'c1', name: 'Tiro tradicional', mode: 'KNOCKDOWN' },
+          ],
+        }),
+      ).rejects.toThrow(/ya tiene cuadro/);
+    });
+
+    it('rechaza nombres repetidos, dianas inexistentes y jueces ajenos', async () => {
+      const { service, activity } = build();
+      await expect(
+        service.sync(activity as any, {
+          categories: [
+            { name: 'Duelos', mode: 'KNOCKDOWN' },
+            { name: ' duelos', mode: 'KNOCKDOWN' },
+          ],
+        }),
+      ).rejects.toThrow(/mismo nombre/);
+      await expect(
+        service.sync(activity as any, {
+          categories: [
+            { name: 'Puntaje', mode: 'SCORE', scoringFormatId: 'x' },
+          ],
+        }),
+      ).rejects.toThrow(/diana/);
+      await expect(
+        service.sync(activity as any, {
+          categories: [{ name: 'Duelos', mode: 'KNOCKDOWN', judgeId: 'otro' }],
+        }),
+      ).rejects.toThrow(/jueces del torneo/);
+    });
   });
 
   it('rechaza archivos que no son documentos', async () => {

@@ -10,6 +10,7 @@ import {
   Activity,
   ActivityType,
   BankAccount,
+  CategoryMode,
   MemberStatus,
   Prisma,
   Registration,
@@ -22,7 +23,7 @@ import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { UploadService } from '../upload/upload.service';
-import { TournamentDetailsDto } from './dto';
+import { TournamentCategoryDto, TournamentDetailsDto } from './dto';
 
 /// Reglamentos: PDF y documentos de Office/LibreOffice. Nada que el navegador
 /// ejecute (HTML, SVG), porque se sirven desde el dominio de la API.
@@ -195,8 +196,10 @@ export class ActivityTournamentsService {
           slug: `${slugify(activity.title) || 'torneo'}-${randomBytes(3).toString('hex')}`,
           // Al publicarlo en el calendario queda abierto a inscripciones
           status: TournamentStatus.REGISTRATION_OPEN,
-          // Una categoría para empezar; el admin la ajusta o agrega más
-          categories: { create: { name: 'General' } },
+          // Sin categorías en el formulario, una para empezar
+          ...(!details?.categories?.length && {
+            categories: { create: { name: 'General' } },
+          }),
         },
       });
       tournamentId = created.id;
@@ -207,30 +210,62 @@ export class ActivityTournamentsService {
     }
 
     if (details?.judgeIds) await this.setJudges(tournamentId, details.judgeIds);
+    if (details?.categories) {
+      await this.setCategories(tournamentId, details.categories);
+    }
   }
 
-  /// Cuenta, instrucciones y montos del último torneo, para no reescribirlos
-  /// en cada uno. Una cuenta ya desactivada no se propone.
+  /// Cuenta, instrucciones, montos y categorías del último torneo, para no
+  /// reescribirlos en cada uno. Una cuenta ya desactivada no se propone, y las
+  /// categorías se copian sin juez (cambia de un torneo a otro).
   async paymentDefaults() {
-    const last = await this.prisma.tournament.findFirst({
-      where: {
-        OR: [
-          { paymentInfo: { not: Prisma.DbNull } },
-          { bankAccountId: { not: null } },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        paymentInfo: true,
-        bankAccount: { select: { id: true, isActive: true } },
-      },
-    });
-    if (!last) return null;
-    const own = last.paymentInfo as TournamentPayment | null;
+    const [lastPaid, lastTournament] = await Promise.all([
+      this.prisma.tournament.findFirst({
+        where: {
+          OR: [
+            { paymentInfo: { not: Prisma.DbNull } },
+            { bankAccountId: { not: null } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          paymentInfo: true,
+          bankAccount: { select: { id: true, isActive: true } },
+        },
+      }),
+      this.prisma.tournament.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: {
+          categories: {
+            orderBy: { order: 'asc' },
+            select: {
+              name: true,
+              mode: true,
+              scoringFormatId: true,
+              arrowsPerArcher: true,
+              targetsToWin: true,
+              shootOffArrows: true,
+              playoffArrows: true,
+              scoringFormat: { select: { isActive: true } },
+            },
+          },
+        },
+      }),
+    ]);
+    if (!lastPaid && !lastTournament) return null;
+    const own = lastPaid?.paymentInfo as TournamentPayment | null | undefined;
     return {
-      bankAccountId: last.bankAccount?.isActive ? last.bankAccount.id : null,
+      bankAccountId: lastPaid?.bankAccount?.isActive
+        ? lastPaid.bankAccount.id
+        : null,
       instructions: own?.instructions,
       fees: own?.fees ?? [],
+      categories: (lastTournament?.categories ?? []).map(
+        ({ scoringFormat, ...c }) => ({
+          ...c,
+          scoringFormatId: scoringFormat?.isActive ? c.scoringFormatId : null,
+        }),
+      ),
     };
   }
 
@@ -345,6 +380,8 @@ export class ActivityTournamentsService {
         .filter(Boolean)
         .join(' '),
       activity,
+      category: category.name,
+      number: participant.number,
       paymentInfo: paymentFor(tournament),
     });
     return {
@@ -396,6 +433,8 @@ export class ActivityTournamentsService {
       where: { id: registrationId },
       include: {
         member: { include: { user: true } },
+        category: { select: { name: true } },
+        participant: { select: { number: true } },
         tournament: { include: { activity: { include: { place: true } } } },
       },
     });
@@ -423,6 +462,8 @@ export class ActivityTournamentsService {
         to: registration.member.user.email,
         name: registration.member.user.name,
         activity,
+        category: registration.category.name,
+        number: registration.participant.number,
       });
     }
     return { id: updated.id, status: updated.status, emailSent };
@@ -604,6 +645,137 @@ export class ActivityTournamentsService {
         data: ids.map((userId) => ({ tournamentId, userId })),
       }),
     ]);
+  }
+
+  /**
+   * Deja las categorías del torneo como la lista recibida: crea las nuevas,
+   * actualiza las existentes y borra las que faltan. Una categoría con
+   * inscritos no se borra, y la modalidad no cambia una vez armado su cuadro.
+   */
+  private async setCategories(
+    tournamentId: string,
+    list: TournamentCategoryDto[],
+  ) {
+    const names = list.map((c) => c.name.trim().toLowerCase());
+    const repeated = list.filter((_, i) => names.indexOf(names[i]) !== i);
+    if (repeated.length) {
+      throw new BadRequestException(
+        `Hay categorías con el mismo nombre: ${repeated[0].name}`,
+      );
+    }
+
+    const current = await this.prisma.tournamentCategory.findMany({
+      where: { tournamentId },
+      include: { _count: { select: { registrations: true, rounds: true } } },
+    });
+    const byId = new Map(current.map((c) => [c.id, c]));
+    const unknown = list.find((c) => c.id && !byId.has(c.id));
+    if (unknown) {
+      throw new BadRequestException(
+        `La categoría «${unknown.name}» no es de este torneo`,
+      );
+    }
+
+    const kept = new Set(list.map((c) => c.id).filter(Boolean));
+    const removed = current.filter((c) => !kept.has(c.id));
+    const locked = removed.find(
+      (c) => c._count.registrations > 0 || c._count.rounds > 0,
+    );
+    if (locked) {
+      throw new ConflictException(
+        `«${locked.name}» tiene inscritos: no se puede quitar del torneo`,
+      );
+    }
+    for (const c of list) {
+      const existing = c.id ? byId.get(c.id) : undefined;
+      if (existing && existing._count.rounds > 0 && existing.mode !== c.mode) {
+        throw new ConflictException(
+          `«${existing.name}» ya tiene cuadro: no puede cambiar de modalidad`,
+        );
+      }
+    }
+
+    // Dianas que existan; una desactivada solo si la categoría ya la usaba
+    const formatIds = [
+      ...new Set(list.map((c) => c.scoringFormatId).filter(Boolean)),
+    ] as string[];
+    const formats = await this.prisma.scoringFormat.findMany({
+      where: { id: { in: formatIds } },
+    });
+    for (const c of list) {
+      if (c.mode !== CategoryMode.SCORE || !c.scoringFormatId) continue;
+      const format = formats.find((f) => f.id === c.scoringFormatId);
+      const keeps = c.id && byId.get(c.id)?.scoringFormatId === format?.id;
+      if (!format || (!format.isActive && !keeps)) {
+        throw new BadRequestException(
+          `La diana elegida para «${c.name}» no está disponible`,
+        );
+      }
+    }
+
+    // El juez de cada categoría sale de los jueces del torneo
+    const judges = new Set(
+      (
+        await this.prisma.tournamentJudge.findMany({
+          where: { tournamentId },
+          select: { userId: true },
+        })
+      ).map((j) => j.userId),
+    );
+    const strayJudge = list.find((c) => c.judgeId && !judges.has(c.judgeId));
+    if (strayJudge) {
+      throw new BadRequestException(
+        `El juez de «${strayJudge.name}» debe estar entre los jueces del torneo`,
+      );
+    }
+
+    const data = (c: TournamentCategoryDto, order: number) => ({
+      name: c.name.trim(),
+      order,
+      mode: c.mode,
+      // La diana solo aplica al puntaje
+      scoringFormatId:
+        c.mode === CategoryMode.SCORE ? c.scoringFormatId || null : null,
+      arrowsPerArcher: c.arrowsPerArcher,
+      targetsToWin: c.targetsToWin,
+      shootOffArrows: c.shootOffArrows,
+      playoffArrows: c.playoffArrows,
+      judgeId: c.judgeId || null,
+    });
+    try {
+      await this.prisma.$transaction([
+        this.prisma.tournamentCategory.deleteMany({
+          where: { id: { in: removed.map((c) => c.id) } },
+        }),
+        // Nombres provisionales: renombrar A→B y B→A no choca con el único
+        ...list
+          .filter((c) => c.id)
+          .map((c) =>
+            this.prisma.tournamentCategory.update({
+              where: { id: c.id },
+              data: { name: `~${c.id}` },
+            }),
+          ),
+        ...list.map((c, order) =>
+          c.id
+            ? this.prisma.tournamentCategory.update({
+                where: { id: c.id },
+                data: data(c, order),
+              })
+            : this.prisma.tournamentCategory.create({
+                data: { tournamentId, ...data(c, order) },
+              }),
+        ),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new BadRequestException('Hay categorías con el mismo nombre');
+      }
+      throw error;
+    }
   }
 
   private async detach(activity: Activity) {

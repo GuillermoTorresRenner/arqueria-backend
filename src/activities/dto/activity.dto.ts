@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { ActivityType, RegistrationStatus } from '@prisma/client';
+import { ActivityType, CategoryMode, RegistrationStatus } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -62,6 +63,85 @@ export class PaymentInfoDto {
   fees?: FeeDto[];
 }
 
+/// Categoría de competencia del torneo. Sin id se crea; las que no vengan en
+/// la lista se eliminan (si no tienen inscritos).
+export class TournamentCategoryDto {
+  @ApiPropertyOptional({ description: 'Categoría existente a actualizar' })
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @ApiProperty({ example: 'Tiro tradicional' })
+  @IsString()
+  @MinLength(2, { message: 'Cada categoría necesita un nombre' })
+  @MaxLength(60)
+  @Transform(trim)
+  name: string;
+
+  @ApiProperty({ enum: CategoryMode, description: 'Puntaje o duelos' })
+  @IsEnum(CategoryMode)
+  mode: CategoryMode;
+
+  @ApiPropertyOptional({
+    description: 'Puntaje: diana (ver /tournaments/formats)',
+  })
+  @IsOptional()
+  @IsString()
+  scoringFormatId?: string | null;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Puntaje: flechas por arquero en cada ronda',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  arrowsPerArcher?: number;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: 'Duelos: dianas abatidas para ganar',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  targetsToWin?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Flechas por arquero en cada tanda de desempate',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  shootOffArrows?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    description:
+      'Flechas por arquero en la minironda entre perdedores empatados',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  playoffArrows?: number;
+
+  @ApiPropertyOptional({
+    description: 'Juez de la categoría: uno de los jueces del torneo',
+  })
+  @IsOptional()
+  @IsString()
+  judgeId?: string | null;
+}
+
 /// Datos propios de un torneo
 export class TournamentDetailsDto {
   @ApiPropertyOptional({
@@ -100,6 +180,18 @@ export class TournamentDetailsDto {
   @Min(1)
   @Max(10_000)
   maxParticipants?: number | null;
+
+  @ApiPropertyOptional({
+    type: [TournamentCategoryDto],
+    description: 'Lista completa de categorías: reemplaza a las actuales',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'El torneo necesita al menos una categoría' })
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => TournamentCategoryDto)
+  categories?: TournamentCategoryDto[];
 
   @ApiPropertyOptional({
     description: 'Cuenta guardada a la que se transfiere (ver /bank-accounts)',

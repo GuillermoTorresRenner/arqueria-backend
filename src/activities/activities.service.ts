@@ -159,7 +159,9 @@ export class ActivitiesService {
             documents: { orderBy: { createdAt: 'asc' } },
             categories: {
               orderBy: { order: 'asc' },
-              select: { id: true, name: true, mode: true },
+              include: {
+                _count: { select: { registrations: true, rounds: true } },
+              },
             },
             registrations: {
               where: { status: { not: RegistrationStatus.WITHDRAWN } },
@@ -229,7 +231,13 @@ export class ActivitiesService {
     await this.tournaments
       .sync(activity, dto.tournament)
       .catch(async (error) => {
+        // La ficha pudo alcanzar a crearse antes del error: se va con ella
+        const created = await this.prisma.activity.findUnique({
+          where: { id: activity.id },
+          select: { tournamentId: true },
+        });
         await this.prisma.activity.delete({ where: { id: activity.id } });
+        if (created) await this.tournaments.removeFor(created);
         throw error;
       });
 
@@ -421,7 +429,7 @@ export class ActivitiesService {
           return { ...a, tournament, attending: Boolean(attendances?.length) };
         }
         const { registrations, paymentInfo, bankAccount, ...t } = tournament;
-        const mine = registrations?.find(
+        const mine = (registrations ?? []).filter(
           (r) => r.status !== RegistrationStatus.WITHDRAWN,
         );
         return {
@@ -432,7 +440,8 @@ export class ActivitiesService {
             fees: (paymentInfo as TournamentPayment | null)?.fees ?? [],
             paymentInfo: paymentFor({ paymentInfo, bankAccount }),
           },
-          registration: mine ?? null,
+          /// Una por categoría; el número es el mismo en todas
+          registrations: mine,
         };
       }),
     };

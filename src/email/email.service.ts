@@ -439,6 +439,9 @@ export class EmailService {
     name?: string | null;
     memberName: string;
     activity: NoticeActivity;
+    /// Categoría en la que se preinscribe y su número de participante
+    category: string;
+    number: number;
     paymentInfo: PaymentInfoData | null;
   }): Promise<boolean> {
     const { to, activity, paymentInfo } = params;
@@ -456,7 +459,7 @@ export class EmailService {
     ]
       .filter(([, value]) => value)
       .map(([label, value]) => ({ label, value }));
-    const receiptSubject = `Comprobante de pago · ${activity.title} · ${params.memberName}`;
+    const receiptSubject = `Comprobante de pago · ${activity.title} · ${params.category} · N.º ${params.number} ${params.memberName}`;
     const receiptUrl = `mailto:${brand.supportEmail}?subject=${encodeURIComponent(receiptSubject)}`;
 
     return this.sendSimple({
@@ -464,10 +467,12 @@ export class EmailService {
       logType: 'tournament_registration',
       userName: name,
       template: 'tournament-registration',
-      subject: `Preinscripción recibida · ${activity.title}`,
+      subject: `Preinscripción recibida · ${activity.title} · ${params.category}`,
       data: {
         firstName: name,
         title: activity.title,
+        category: params.category,
+        number: params.number,
         date: when.date,
         time: when.time,
         place: activity.place,
@@ -482,7 +487,8 @@ export class EmailService {
       text: [
         `Hola, ${name}:`,
         '',
-        `Recibimos tu preinscripción en ${activity.title} (${when.date}, ${when.time}).`,
+        `Recibimos tu preinscripción en ${activity.title}, categoría ${params.category} (${when.date}, ${when.time}).`,
+        `Tu número de participante es el ${params.number}.`,
         'Para quedar inscrito, transfiere el monto que corresponda y envíanos el comprobante.',
         '',
         ...(fees.length
@@ -509,6 +515,8 @@ export class EmailService {
     to: string;
     name?: string | null;
     activity: NoticeActivity;
+    category: string;
+    number: number;
   }): Promise<boolean> {
     const { to, activity } = params;
     const brand = this.brand();
@@ -519,10 +527,12 @@ export class EmailService {
       logType: 'tournament_confirmed',
       userName: name,
       template: 'tournament-confirmed',
-      subject: `Inscripción confirmada · ${activity.title}`,
+      subject: `Inscripción confirmada · ${activity.title} · ${params.category}`,
       data: {
         firstName: name,
         title: activity.title,
+        category: params.category,
+        number: params.number,
         date: when.date,
         time: when.time,
         place: activity.place,
@@ -532,7 +542,8 @@ export class EmailService {
       text: [
         `Hola, ${name}:`,
         '',
-        `Verificamos tu pago: ya estás inscrito en ${activity.title}.`,
+        `Verificamos tu pago: ya estás inscrito en ${activity.title}, categoría ${params.category}.`,
+        `Tu número de participante es el ${params.number}.`,
         `Cuándo: ${when.date}, ${when.time}`,
         activity.place ? `Dónde: ${activity.place.name}` : '',
         '',
