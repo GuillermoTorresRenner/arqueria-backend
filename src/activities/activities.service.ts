@@ -42,7 +42,14 @@ const TOURNAMENT_PUBLIC_SELECT = {
     select: { id: true, name: true, path: true, mimeType: true, size: true },
     orderBy: { createdAt: 'asc' },
   },
-  _count: { select: { registrations: ACTIVE_REGISTRATIONS } },
+  categories: {
+    orderBy: { order: 'asc' },
+    select: { id: true, name: true, mode: true },
+  },
+  /// El cupo cuenta arqueros (participantes), no inscripciones por categoría
+  _count: {
+    select: { registrations: ACTIVE_REGISTRATIONS, participants: true },
+  },
 } satisfies Prisma.TournamentSelect;
 
 /// Datos públicos de una actividad: lo que ven el home y los socios
@@ -150,12 +157,18 @@ export class ActivitiesService {
               },
             },
             documents: { orderBy: { createdAt: 'asc' } },
+            categories: {
+              orderBy: { order: 'asc' },
+              select: { id: true, name: true, mode: true },
+            },
             registrations: {
               where: { status: { not: RegistrationStatus.WITHDRAWN } },
               orderBy: { createdAt: 'asc' },
               select: {
                 id: true,
                 status: true,
+                category: { select: { id: true, name: true } },
+                participant: { select: { number: true } },
                 createdAt: true,
                 confirmedAt: true,
                 confirmedBy: { select: { name: true, surname: true } },
@@ -381,7 +394,14 @@ export class ActivitiesService {
             registrations: member
               ? {
                   where: { memberId: member.id },
-                  select: { status: true, createdAt: true, confirmedAt: true },
+                  orderBy: { category: { order: 'asc' } },
+                  select: {
+                    status: true,
+                    createdAt: true,
+                    confirmedAt: true,
+                    category: { select: { id: true, name: true } },
+                    participant: { select: { number: true } },
+                  },
                 }
               : false,
           },

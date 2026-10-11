@@ -3,8 +3,7 @@ import { TournamentStatus } from '@prisma/client';
 import { TournamentsService } from './tournaments.service';
 
 describe('TournamentsService', () => {
-  const build = (prisma: any = {}) =>
-    new TournamentsService(prisma as any, {} as any);
+  const build = (prisma: any = {}) => new TournamentsService(prisma as any);
 
   describe('transiciones de estado', () => {
     const assert = (from: TournamentStatus, to: TournamentStatus) =>
@@ -93,104 +92,13 @@ describe('TournamentsService', () => {
     });
   });
 
-  describe('remove', () => {
-    const tournament = {
-      id: 't1',
-      name: 'Copa',
-      status: TournamentStatus.FINISHED,
-    };
-
-    it('se niega a borrar un torneo con puntajes si no se fuerza', async () => {
-      const service = build({
-        score: { count: jest.fn().mockResolvedValue(48) },
-        tournament: { delete: jest.fn() },
-      });
-      jest.spyOn(service, 'findOne').mockResolvedValue(tournament as any);
-
-      await expect(service.remove('t1')).rejects.toThrow(BadRequestException);
-      await expect(service.remove('t1')).rejects.toThrow(/48 series/);
-    });
-
-    it('borra sin objeción cuando no hay puntajes', async () => {
-      const del = jest.fn().mockResolvedValue({});
-      const service = build({
-        score: { count: jest.fn().mockResolvedValue(0) },
-        tournament: { delete: del },
-      });
-      jest.spyOn(service, 'findOne').mockResolvedValue(tournament as any);
-
-      await expect(service.remove('t1')).resolves.toMatchObject({
-        deletedScores: 0,
-      });
-      expect(del).toHaveBeenCalled();
-    });
-
-    it('borra con force aunque haya puntajes', async () => {
-      const del = jest.fn().mockResolvedValue({});
-      const service = build({
-        score: { count: jest.fn().mockResolvedValue(48) },
-        tournament: { delete: del },
-      });
-      jest.spyOn(service, 'findOne').mockResolvedValue(tournament as any);
-
-      await expect(service.remove('t1', true)).resolves.toMatchObject({
-        deletedScores: 48,
-      });
-      expect(del).toHaveBeenCalled();
-    });
-  });
-
-  describe('removeRegistration', () => {
-    it('marca como retirado al arquero que ya tiene puntajes', async () => {
-      const update = jest.fn().mockResolvedValue({});
-      const service = build({
-        registration: {
-          findUnique: jest.fn().mockResolvedValue({
-            id: 'r1',
-            memberId: 'm1',
-            tournamentId: 't1',
-          }),
-          update,
-          delete: jest.fn(),
-        },
-        score: { count: jest.fn().mockResolvedValue(6) },
-      });
-
-      const out = await service.removeRegistration('r1');
-      expect(out.withdrawn).toBe(true);
-      expect(update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { status: 'WITHDRAWN', groupId: null },
-        }),
-      );
-    });
-
-    it('elimina la inscripción cuando no hay puntajes', async () => {
-      const del = jest.fn().mockResolvedValue({});
-      const service = build({
-        registration: {
-          findUnique: jest.fn().mockResolvedValue({
-            id: 'r1',
-            memberId: 'm1',
-            tournamentId: 't1',
-          }),
-          update: jest.fn(),
-          delete: del,
-        },
-        score: { count: jest.fn().mockResolvedValue(0) },
-      });
-
-      const out = await service.removeRegistration('r1');
-      expect(out.withdrawn).toBe(false);
-      expect(del).toHaveBeenCalled();
-    });
-  });
   it('el detalle público no expone la cuenta bancaria, solo los montos', async () => {
     const prisma = {
       tournament: {
         findUnique: jest.fn(async () => ({
           id: 't1',
           slug: 'copa',
+          bankAccountId: 'b1',
           paymentInfo: {
             accountNumber: '00012345678',
             fees: [{ label: 'Socio', amount: 15000 }],
@@ -200,7 +108,38 @@ describe('TournamentsService', () => {
     };
     const result: any = await build(prisma).findBySlug('copa');
     expect(result.paymentInfo).toBeUndefined();
+    expect(result.bankAccountId).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain('00012345678');
     expect(result.fees).toEqual([{ label: 'Socio', amount: 15000 }]);
+  });
+
+  describe('dianas', () => {
+    it('rechaza zonas con la misma etiqueta', () => {
+      const prisma = { scoringFormat: { create: jest.fn() } };
+      expect(() =>
+        build(prisma).createFormat({
+          name: 'Diana turca',
+          zones: [
+            { label: '1', value: 1 },
+            { label: '1', value: 2 },
+          ],
+        }),
+      ).toThrow(/repetidas: 1/);
+      expect(prisma.scoringFormat.create).not.toHaveBeenCalled();
+    });
+
+    it('no borra una diana que usa alguna categoría', async () => {
+      const prisma = {
+        scoringFormat: {
+          findUnique: jest.fn(async () => ({ id: 'f1' })),
+          delete: jest.fn(),
+        },
+        tournamentCategory: { count: jest.fn(async () => 2) },
+      };
+      await expect(build(prisma).removeFormat('f1')).rejects.toThrow(
+        /2 categoría/,
+      );
+      expect(prisma.scoringFormat.delete).not.toHaveBeenCalled();
+    });
   });
 });

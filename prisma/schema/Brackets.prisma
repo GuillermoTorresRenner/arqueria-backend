@@ -1,0 +1,137 @@
+/// Cuadro de eliminación directa de cada categoría. Solo la primera ronda se
+/// sortea; las siguientes se arman con los ganadores. Una ronda impar deja a
+/// un arquero sin rival (por sorteo) que se enfrenta al mejor perdedor.
+
+/// Ronda del cuadro de una categoría (1 = primera)
+model BracketRound {
+  id              String   @id @default(cuid())
+  categoryId      String
+  number          Int
+  /// SCORE: flechas por arquero en esta ronda; null = las de la categoría
+  arrowsPerArcher Int?
+  /// KNOCKDOWN: dianas para ganar en esta ronda; null = las de la categoría
+  targetsToWin    Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  draws    Draw[]
+  matches  Match[]
+
+  @@unique([categoryId, number])
+  @@map("bracket_rounds")
+}
+
+enum DrawMethod {
+  ALGORITHM /// el sistema sortea con una semilla registrada
+  MANUAL /// tómbola física: el admin escribe qué número enfrenta a cuál
+}
+
+/// Sorteo de una ronda, auditable. Se guarda cada intento: si se reabre, el
+/// vigente es el último.
+model Draw {
+  id        String     @id @default(cuid())
+  roundId   String
+  method    DrawMethod
+  /// ALGORITHM: semilla del PRNG, para recalcular el mismo resultado
+  seed      String?
+  /// Foto del resultado por número de participante:
+  /// { "pairs": [[3, 7], [1, 12]], "bye": 5 }
+  result    Json
+  drawnById String?
+  createdAt DateTime   @default(now())
+
+  round   BracketRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  drawnBy Users?       @relation(fields: [drawnById], references: [id], onDelete: SetNull)
+
+  @@index([roundId, createdAt])
+  @@map("draws")
+}
+
+enum MatchKind {
+  REGULAR /// enfrentamiento del cuadro
+  REPECHAGE /// el que quedó sin rival contra el mejor perdedor de la ronda
+  PLAYOFF /// minironda entre perdedores empatados por el mejor puntaje
+  THIRD_PLACE /// perdedores de semifinales
+  FINAL
+}
+
+enum MatchStatus {
+  PENDING
+  IN_PROGRESS
+  FINISHED
+}
+
+/// Enfrentamiento. Normalmente 2 arqueros; una minironda puede tener más.
+model Match {
+  id         String      @id @default(cuid())
+  roundId    String
+  kind       MatchKind   @default(REGULAR)
+  /// Posición en la ronda: ordena el fixture y define los cruces siguientes
+  order      Int
+  status     MatchStatus @default(PENDING)
+  winnerId   String? /// TournamentParticipant.id
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  round   BracketRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  entries MatchEntry[]
+  shots   MatchShot[]
+
+  @@unique([roundId, kind, order])
+  @@map("matches")
+}
+
+/// Un arquero dentro de un enfrentamiento
+model MatchEntry {
+  id            String   @id @default(cuid())
+  matchId       String
+  participantId String
+  /// 1 o 2 (o más en una minironda): lado en el fixture
+  slot          Int
+  createdAt     DateTime @default(now())
+
+  match       Match                 @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  participant TournamentParticipant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  shots       MatchShot[]
+
+  @@unique([matchId, participantId])
+  @@unique([matchId, slot])
+  @@map("match_entries")
+}
+
+enum ShotPhase {
+  REGULAR /// las flechas o disparos de la ronda
+  SHOOT_OFF /// desempate: flechas extra hasta que alguien gane
+}
+
+/// Una flecha (SCORE) o un disparo (KNOCKDOWN) de un arquero. El total y el
+/// ganador se calculan en el backend a partir de estas filas.
+model MatchShot {
+  id           String    @id @default(cuid())
+  matchId      String
+  entryId      String
+  phase        ShotPhase @default(REGULAR)
+  /// N.º de flecha o disparo dentro de la fase, desde 1
+  sequence     Int
+  /// SCORE: etiqueta de la zona («2», «1», «0»)
+  zoneLabel    String?
+  /// SCORE: puntos de la zona. KNOCKDOWN: 1 si se lleva el punto del disparo
+  /// (abatió primero o, si fue simultáneo, quedó más cerca del centro)
+  value        Int       @default(0)
+  /// KNOCKDOWN: abatió su diana
+  hit          Boolean?
+  recordedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  match      Match      @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  entry      MatchEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  recordedBy Users?     @relation("ShotRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@unique([entryId, phase, sequence])
+  @@index([matchId])
+  @@map("match_shots")
+}

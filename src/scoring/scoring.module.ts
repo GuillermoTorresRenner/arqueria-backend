@@ -1,14 +1,9 @@
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
-import { AuthModule } from '../auth/auth.module';
-import { ScoringController } from './scoring.controller';
-import { ScoringService } from './scoring.service';
 import { ScoringGateway } from './scoring.gateway';
 
+/// Marcador en vivo por socket. El fixture de los torneos se emite por aquí.
 @Module({
-  imports: [PrismaModule, AuthModule],
-  controllers: [ScoringController],
-  providers: [ScoringService, ScoringGateway],
-  exports: [ScoringService],
+  providers: [ScoringGateway],
+  exports: [ScoringGateway],
 })
 export class ScoringModule {}

@@ -31,6 +31,7 @@ import {
   CreateBankAccountDto,
   CreatePlaceDto,
   GeocodeQueryDto,
+  RegistrationCategoryDto,
   RegistrationStatusDto,
   ReverseGeocodeDto,
   UpcomingQueryDto,
@@ -188,8 +189,12 @@ export class ActivitiesController {
     description:
       'Queda pendiente de pago; recibe por correo los datos de transferencia y la indicación de enviar el comprobante.',
   })
-  register(@Param('id') id: string, @ActiveUser() user: ActiveUserData) {
-    return this.tournaments.register(id, user.userID);
+  register(
+    @Param('id') id: string,
+    @ActiveUser() user: ActiveUserData,
+    @Body() dto: RegistrationCategoryDto,
+  ) {
+    return this.tournaments.register(id, user.userID, dto.categoryId);
   }
 
   @Delete(':id/registration')
@@ -197,8 +202,12 @@ export class ActivitiesController {
   @ApiOperation({
     summary: 'Retirar la preinscripción (solo si no está pagada)',
   })
-  withdraw(@Param('id') id: string, @ActiveUser() user: ActiveUserData) {
-    return this.tournaments.withdraw(id, user.userID);
+  withdraw(
+    @Param('id') id: string,
+    @ActiveUser() user: ActiveUserData,
+    @Query() dto: RegistrationCategoryDto,
+  ) {
+    return this.tournaments.withdraw(id, user.userID, dto.categoryId);
   }
 
   // ---------- Administración ----------

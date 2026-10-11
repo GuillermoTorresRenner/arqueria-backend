@@ -12,6 +12,7 @@ import {
   BankAccount,
   MemberStatus,
   Prisma,
+  Registration,
   RegistrationStatus,
   Role,
   TournamentStatus,
@@ -194,6 +195,8 @@ export class ActivityTournamentsService {
           slug: `${slugify(activity.title) || 'torneo'}-${randomBytes(3).toString('hex')}`,
           // Al publicarlo en el calendario queda abierto a inscripciones
           status: TournamentStatus.REGISTRATION_OPEN,
+          // Una categoría para empezar; el admin la ajusta o agrega más
+          categories: { create: { name: 'General' } },
         },
       });
       tournamentId = created.id;
@@ -240,7 +243,7 @@ export class ActivityTournamentsService {
   // ---------- Inscripción de socios ----------
 
   /// Preinscripción: queda pendiente de pago y le llegan los datos por correo
-  async register(activityId: string, userId: string) {
+  async register(activityId: string, userId: string, categoryId?: string) {
     const { activity, tournament } = await this.loadTournament(activityId);
     const member = await this.prisma.member.findUnique({
       where: { userId },
@@ -270,45 +273,70 @@ export class ActivityTournamentsService {
       throw new BadRequestException('El plazo de inscripción ya cerró');
     }
 
-    const key = {
-      tournamentId_memberId: {
-        tournamentId: tournament.id,
-        memberId: member.id,
+    const category = this.pickCategory(tournament.categories, categoryId);
+    const existing = await this.prisma.registration.findUnique({
+      where: {
+        categoryId_memberId: { categoryId: category.id, memberId: member.id },
       },
-    };
-    const existing = await this.prisma.registration.findUnique({ where: key });
+    });
     if (existing && existing.status !== RegistrationStatus.WITHDRAWN) {
       throw new ConflictException(
         existing.status === RegistrationStatus.CONFIRMED
-          ? 'Ya estás inscrito en este torneo'
-          : 'Ya tienes una preinscripción en este torneo',
+          ? `Ya estás inscrito en ${category.name}`
+          : `Ya tienes una preinscripción en ${category.name}`,
       );
     }
 
-    if (tournament.maxParticipants) {
-      const taken = await this.prisma.registration.count({
-        where: {
-          tournamentId: tournament.id,
-          status: { not: RegistrationStatus.WITHDRAWN },
-        },
-      });
-      if (taken >= tournament.maxParticipants) {
-        throw new ConflictException('El torneo completó su cupo');
-      }
-    }
-
-    const registration = existing
-      ? await this.prisma.registration.update({
-          where: key,
-          data: {
-            status: RegistrationStatus.PENDING,
-            confirmedAt: null,
-            confirmedById: null,
+    // El número se asigna con la primera inscripción del torneo y se comparte
+    // entre categorías. El cupo cuenta arqueros, no inscripciones.
+    const { registration, participant } = await this.prisma.$transaction(
+      async (tx) => {
+        await this.lockTournament(tx, tournament.id);
+        let participant = await tx.tournamentParticipant.findUnique({
+          where: {
+            tournamentId_memberId: {
+              tournamentId: tournament.id,
+              memberId: member.id,
+            },
           },
-        })
-      : await this.prisma.registration.create({
-          data: { tournamentId: tournament.id, memberId: member.id },
         });
+        if (!participant) {
+          const taken = await tx.tournamentParticipant.count({
+            where: { tournamentId: tournament.id },
+          });
+          if (
+            tournament.maxParticipants &&
+            taken >= tournament.maxParticipants
+          ) {
+            throw new ConflictException('El torneo completó su cupo');
+          }
+          participant = await tx.tournamentParticipant.create({
+            data: {
+              tournamentId: tournament.id,
+              memberId: member.id,
+              number: taken + 1,
+            },
+          });
+        }
+        const registration = existing
+          ? await tx.registration.update({
+              where: { id: existing.id },
+              data: {
+                status: RegistrationStatus.PENDING,
+                confirmedAt: null,
+                confirmedById: null,
+              },
+            })
+          : await tx.registration.create({
+              data: {
+                tournamentId: tournament.id,
+                memberId: member.id,
+                categoryId: category.id,
+              },
+            });
+        return { registration, participant };
+      },
+    );
 
     const emailSent = await this.emailService.sendTournamentRegistrationEmail({
       to: member.user.email,
@@ -319,32 +347,40 @@ export class ActivityTournamentsService {
       activity,
       paymentInfo: paymentFor(tournament),
     });
-    return { status: registration.status, emailSent };
+    return {
+      status: registration.status,
+      number: participant.number,
+      category: category.name,
+      emailSent,
+    };
   }
 
   /// El socio retira su preinscripción. Una inscripción ya pagada se cancela
   /// hablando con el club (puede haber devolución de por medio).
-  async withdraw(activityId: string, userId: string) {
+  async withdraw(activityId: string, userId: string, categoryId?: string) {
     const { tournament } = await this.loadTournament(activityId);
     const member = await this.prisma.member.findUnique({ where: { userId } });
     if (!member) throw new ForbiddenException('Solo los socios se inscriben');
-    const registration = await this.prisma.registration.findUnique({
+    const registrations = await this.prisma.registration.findMany({
       where: {
-        tournamentId_memberId: {
-          tournamentId: tournament.id,
-          memberId: member.id,
-        },
+        tournamentId: tournament.id,
+        memberId: member.id,
+        ...(categoryId && { categoryId }),
       },
     });
-    if (!registration || registration.status === RegistrationStatus.WITHDRAWN) {
+    if (registrations.length === 0) {
       throw new NotFoundException('No tienes una inscripción en este torneo');
     }
+    if (registrations.length > 1) {
+      throw new BadRequestException('Indica de qué categoría te retiras');
+    }
+    const [registration] = registrations;
     if (registration.status === RegistrationStatus.CONFIRMED) {
       throw new BadRequestException(
         'Tu inscripción ya está pagada y confirmada: escríbenos para cancelarla',
       );
     }
-    await this.prisma.registration.delete({ where: { id: registration.id } });
+    await this.deleteRegistration(registration);
     return { status: null };
   }
 
@@ -397,19 +433,81 @@ export class ActivityTournamentsService {
       where: { id: registrationId },
     });
     if (!registration) throw new NotFoundException('Inscripción no encontrada');
-    const scores = await this.prisma.score.count({
+    const matches = await this.prisma.matchEntry.count({
       where: {
-        memberId: registration.memberId,
-        round: { tournamentId: registration.tournamentId },
+        participant: {
+          tournamentId: registration.tournamentId,
+          memberId: registration.memberId,
+        },
+        match: { round: { categoryId: registration.categoryId } },
       },
     });
-    if (scores > 0) {
+    if (matches > 0) {
       throw new ConflictException(
-        'El arquero ya tiene puntajes en este torneo: no se puede eliminar su inscripción',
+        'El arquero ya está en el cuadro de esta categoría: no se puede eliminar su inscripción',
       );
     }
-    await this.prisma.registration.delete({ where: { id: registrationId } });
+    await this.deleteRegistration(registration);
     return { id: registrationId };
+  }
+
+  /**
+   * Borra una inscripción. Si el arquero se queda sin categorías deja de ser
+   * participante y, mientras no haya sorteo, los números siguientes bajan uno
+   * para que la serie siga siendo 1..N. Tras el sorteo los números quedan fijos.
+   */
+  private async deleteRegistration(registration: Registration) {
+    const { tournamentId, memberId } = registration;
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockTournament(tx, tournamentId);
+      await tx.registration.delete({ where: { id: registration.id } });
+      const remaining = await tx.registration.count({
+        where: { tournamentId, memberId },
+      });
+      if (remaining > 0) return;
+
+      const participant = await tx.tournamentParticipant.findUnique({
+        where: { tournamentId_memberId: { tournamentId, memberId } },
+        include: { _count: { select: { matchEntries: true } } },
+      });
+      // Quien ya está en un cuadro conserva su número
+      if (!participant || participant._count.matchEntries > 0) return;
+      await tx.tournamentParticipant.delete({ where: { id: participant.id } });
+
+      const drawn = await tx.draw.count({
+        where: { round: { category: { tournamentId } } },
+      });
+      if (drawn > 0) return;
+      // En dos pasos por el índice único (torneo, número)
+      await tx.$executeRaw`
+        UPDATE "tournament_participants" SET "number" = -"number"
+        WHERE "tournamentId" = ${tournamentId} AND "number" > ${participant.number}`;
+      await tx.$executeRaw`
+        UPDATE "tournament_participants" SET "number" = -"number" - 1
+        WHERE "tournamentId" = ${tournamentId} AND "number" < 0`;
+    });
+  }
+
+  /// Serializa las altas y bajas de un torneo: los números no pueden chocar
+  private async lockTournament(tx: Prisma.TransactionClient, id: string) {
+    await tx.$queryRaw`SELECT 1 FROM "tournaments" WHERE "id" = ${id} FOR UPDATE`;
+  }
+
+  /// La categoría elegida, o la única que tenga el torneo
+  private pickCategory<T extends { id: string; name: string }>(
+    categories: T[],
+    categoryId?: string,
+  ): T {
+    if (categoryId) {
+      const category = categories.find((c) => c.id === categoryId);
+      if (!category) throw new BadRequestException('Esa categoría no existe');
+      return category;
+    }
+    if (categories.length === 1) return categories[0];
+    if (categories.length === 0) {
+      throw new BadRequestException('El torneo aún no tiene categorías');
+    }
+    throw new BadRequestException('Elige en qué categoría te inscribes');
   }
 
   // ---------- Reglamentos en archivo ----------
@@ -451,7 +549,12 @@ export class ActivityTournamentsService {
       where: { id: activityId },
       include: {
         place: true,
-        tournament: { include: { bankAccount: true } },
+        tournament: {
+          include: {
+            bankAccount: true,
+            categories: { orderBy: { order: 'asc' } },
+          },
+        },
       },
     });
     if (!activity) throw new NotFoundException('Actividad no encontrada');

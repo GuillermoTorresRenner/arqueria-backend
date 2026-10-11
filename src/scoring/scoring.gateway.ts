@@ -11,9 +11,9 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
 /**
- * Marcador en vivo. A diferencia del gateway de notificaciones, este admite
+ * Fixture en vivo. A diferencia del gateway de notificaciones, este admite
  * conexiones anónimas: el público sigue el torneo sin tener cuenta. Solo se
- * emite (nunca se recibe) puntaje por aquí; cargarlo va por HTTP autenticado.
+ * emite (nunca se recibe) por aquí; cargar resultados va por HTTP autenticado.
  */
 @WebSocketGateway({
   namespace: 'scoring',
@@ -54,14 +54,9 @@ export class ScoringGateway
     return { ok: true };
   }
 
-  /// Una serie nueva o corregida.
-  emitScoreUpdate(tournamentId: string, payload: unknown) {
-    this.server?.to(this.room(tournamentId)).emit('scoreUpdate', payload);
-  }
-
-  /// Ranking recalculado.
-  emitLeaderboard(tournamentId: string, payload: unknown) {
-    this.server?.to(this.room(tournamentId)).emit('leaderboard', payload);
+  /// Fixture de una categoría recalculado
+  emitBracket(tournamentId: string, payload: unknown) {
+    this.server?.to(this.room(tournamentId)).emit('bracket', payload);
   }
 
   private room(tournamentId: string) {

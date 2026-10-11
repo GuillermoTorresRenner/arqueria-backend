@@ -248,8 +248,8 @@ export class MembersService {
   /**
    * Elimina a un socio: su cuenta y su ficha (y su avatar del disco).
    *
-   * Si ya participó en torneos se rechaza: inscripciones y puntajes cuelgan
-   * del socio en cascada y borrarlo alteraría resultados y rankings ya
+   * Si ya participó en torneos se rechaza: inscripciones y participaciones
+   * cuelgan del socio y borrarlo alteraría cuadros y resultados ya
    * publicados. En ese caso se suspende. Si la cuenta es del equipo (admin o
    * juez) solo se borra la ficha de socio, no el acceso al panel.
    */
@@ -258,15 +258,15 @@ export class MembersService {
       where: { id },
       include: {
         user: { select: { id: true, userRoles: true, avatar: true } },
-        _count: { select: { registrations: true, scores: true } },
+        _count: { select: { registrations: true, participants: true } },
       },
     });
     if (!member) throw new NotFoundException('Socio no encontrado');
 
-    const { registrations, scores } = member._count;
-    if (registrations > 0 || scores > 0) {
+    const { registrations, participants } = member._count;
+    if (registrations > 0 || participants > 0) {
       throw new ConflictException(
-        `No se puede eliminar: tiene ${registrations} inscripción(es) y ${scores} serie(s) puntuada(s) en torneos. Suspéndelo para conservar los resultados.`,
+        `No se puede eliminar: participa en ${participants} torneo(s) con ${registrations} inscripción(es). Suspéndelo para conservar los resultados.`,
       );
     }
 

@@ -17,13 +17,12 @@ model Users {
   updatedAt       DateTime  @updatedAt
 
   member                 Member?
-  judgedGroups           TournamentGroup[]
-  groupDraws             GroupDraw[]
-  scoresRecorded         Score[]           @relation("ScoreRecordedBy")
-  scoresValidated        Score[]           @relation("ScoreValidatedBy")
-  activitiesCreated      Activity[]        @relation("ActivityCreatedBy")
-  tournamentJudging      TournamentJudge[] @relation("TournamentJudges")
-  registrationsConfirmed Registration[]    @relation("RegistrationConfirmedBy")
+  judgedCategories       TournamentCategory[] @relation("CategoryJudge")
+  draws                  Draw[]
+  shotsRecorded          MatchShot[]          @relation("ShotRecordedBy")
+  activitiesCreated      Activity[]           @relation("ActivityCreatedBy")
+  tournamentJudging      TournamentJudge[]    @relation("TournamentJudges")
+  registrationsConfirmed Registration[]       @relation("RegistrationConfirmedBy")
 
   @@map("users")
 }

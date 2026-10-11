@@ -31,6 +31,10 @@ describe('ActivityTournamentsService', () => {
         holderEmail: null,
         isActive: true,
       },
+      categories: [{ id: 'c1', name: 'Tiro tradicional' }] as {
+        id: string;
+        name: string;
+      }[],
     };
     const activity = {
       id: 'a1',
@@ -42,7 +46,10 @@ describe('ActivityTournamentsService', () => {
       tournamentId: 't1',
       tournament,
     };
-    const prisma = {
+    const prisma: any = {
+      $transaction: jest.fn(async (fn: (tx: any) => unknown) => fn(prisma)),
+      $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
       activity: {
         findUnique: jest.fn(async () => activity),
         update: jest.fn(),
@@ -56,11 +63,20 @@ describe('ActivityTournamentsService', () => {
       },
       registration: {
         findUnique: jest.fn(async (): Promise<any> => null),
+        findMany: jest.fn(async (): Promise<any[]> => []),
         create: jest.fn(async () => ({ id: 'r1', status: 'PENDING' })),
         update: jest.fn(async ({ data }: any) => ({ id: 'r1', ...data })),
         count: jest.fn(async () => 0),
         delete: jest.fn(),
       },
+      tournamentParticipant: {
+        findUnique: jest.fn(async (): Promise<any> => null),
+        count: jest.fn(async () => 4),
+        create: jest.fn(async ({ data }: any) => ({ id: 'p1', ...data })),
+        delete: jest.fn(),
+      },
+      draw: { count: jest.fn(async () => 0) },
+      matchEntry: { count: jest.fn(async () => 0) },
       tournament: {
         create: jest.fn(async () => ({ id: 't2' })),
         update: jest.fn(),
@@ -88,10 +104,16 @@ describe('ActivityTournamentsService', () => {
     const { prisma, email, service } = build();
     await expect(service.register('a1', 'u1')).resolves.toEqual({
       status: 'PENDING',
+      number: 5,
+      category: 'Tiro tradicional',
       emailSent: true,
     });
+    // Ya había 4 participantes: recibe el número siguiente
+    expect(prisma.tournamentParticipant.create).toHaveBeenCalledWith({
+      data: { tournamentId: 't1', memberId: 'm1', number: 5 },
+    });
     expect(prisma.registration.create).toHaveBeenCalledWith({
-      data: { tournamentId: 't1', memberId: 'm1' },
+      data: { tournamentId: 't1', memberId: 'm1', categoryId: 'c1' },
     });
     expect(email.sendTournamentRegistrationEmail).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -122,9 +144,101 @@ describe('ActivityTournamentsService', () => {
     await expect(service.register('a1', 'u1')).rejects.toThrow(/cerró/);
 
     tournament.registrationEnd = null;
-    tournament.maxParticipants = 2;
-    prisma.registration.count.mockResolvedValueOnce(2);
+    tournament.maxParticipants = 4;
     await expect(service.register('a1', 'u1')).rejects.toThrow(/cupo/);
+  });
+
+  it('en otra categoría conserva su número y no ocupa cupo', async () => {
+    const { prisma, service, tournament } = build();
+    tournament.maxParticipants = 4;
+    tournament.categories.push({ id: 'c2', name: 'Duelos' });
+    prisma.tournamentParticipant.findUnique.mockResolvedValueOnce({
+      id: 'p1',
+      number: 2,
+    });
+    await expect(service.register('a1', 'u1', 'c2')).resolves.toMatchObject({
+      number: 2,
+      category: 'Duelos',
+    });
+    expect(prisma.tournamentParticipant.create).not.toHaveBeenCalled();
+    expect(prisma.registration.create).toHaveBeenCalledWith({
+      data: { tournamentId: 't1', memberId: 'm1', categoryId: 'c2' },
+    });
+  });
+
+  it('con varias categorías hay que elegir una', async () => {
+    const { service, tournament } = build();
+    tournament.categories.push({ id: 'c2', name: 'Duelos' });
+    await expect(service.register('a1', 'u1')).rejects.toThrow(/Elige/);
+    await expect(service.register('a1', 'u1', 'otra')).rejects.toThrow(
+      /no existe/,
+    );
+  });
+
+  it('al retirarse antes del sorteo, los números siguientes bajan uno', async () => {
+    const { prisma, service } = build();
+    prisma.registration.findMany.mockResolvedValueOnce([
+      { id: 'r1', status: 'PENDING', tournamentId: 't1', memberId: 'm1' },
+    ]);
+    prisma.tournamentParticipant.findUnique.mockResolvedValueOnce({
+      id: 'p1',
+      number: 3,
+      _count: { matchEntries: 0 },
+    });
+    await service.withdraw('a1', 'u1');
+    expect(prisma.registration.delete).toHaveBeenCalledWith({
+      where: { id: 'r1' },
+    });
+    expect(prisma.tournamentParticipant.delete).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+    });
+    // Corre la serie en dos pasos (por el índice único)
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$executeRaw.mock.calls[0].slice(1)).toEqual(['t1', 3]);
+  });
+
+  it('tras el sorteo los números quedan fijos', async () => {
+    const { prisma, service } = build();
+    prisma.registration.findMany.mockResolvedValueOnce([
+      { id: 'r1', status: 'PENDING', tournamentId: 't1', memberId: 'm1' },
+    ]);
+    prisma.tournamentParticipant.findUnique.mockResolvedValueOnce({
+      id: 'p1',
+      number: 3,
+      _count: { matchEntries: 0 },
+    });
+    prisma.draw.count.mockResolvedValueOnce(1);
+    await service.withdraw('a1', 'u1');
+    expect(prisma.tournamentParticipant.delete).toHaveBeenCalled();
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('si sigue inscrito en otra categoría conserva su número', async () => {
+    const { prisma, service } = build();
+    prisma.registration.findMany.mockResolvedValueOnce([
+      { id: 'r1', status: 'PENDING', tournamentId: 't1', memberId: 'm1' },
+    ]);
+    prisma.registration.count.mockResolvedValueOnce(1);
+    await service.withdraw('a1', 'u1', 'c1');
+    expect(prisma.registration.findMany).toHaveBeenCalledWith({
+      where: { tournamentId: 't1', memberId: 'm1', categoryId: 'c1' },
+    });
+    expect(prisma.tournamentParticipant.delete).not.toHaveBeenCalled();
+  });
+
+  it('el admin no puede quitar a quien ya está en el cuadro', async () => {
+    const { prisma, service } = build();
+    prisma.registration.findUnique.mockResolvedValueOnce({
+      id: 'r1',
+      tournamentId: 't1',
+      memberId: 'm1',
+      categoryId: 'c1',
+    });
+    prisma.matchEntry.count.mockResolvedValueOnce(1);
+    await expect(service.removeRegistration('r1')).rejects.toThrow(
+      /en el cuadro/,
+    );
+    expect(prisma.registration.delete).not.toHaveBeenCalled();
   });
 
   it('un socio suspendido no se inscribe', async () => {
@@ -141,10 +255,9 @@ describe('ActivityTournamentsService', () => {
 
   it('una inscripción pagada no se retira desde la cuenta', async () => {
     const { prisma, service } = build();
-    prisma.registration.findUnique.mockResolvedValueOnce({
-      id: 'r1',
-      status: 'CONFIRMED',
-    });
+    prisma.registration.findMany.mockResolvedValueOnce([
+      { id: 'r1', status: 'CONFIRMED' },
+    ]);
     await expect(service.withdraw('a1', 'u1')).rejects.toBeInstanceOf(
       BadRequestException,
     );

@@ -1,6 +1,6 @@
 /**
  * Seeder de DESARROLLO. Crea datos de prueba: un admin, un juez, socios,
- * un torneo en curso con grupos sorteados y puntajes cargados.
+ * un torneo con dos categorías (puntaje y duelos) e inscritos numerados.
  *
  * ⚠️  NO EJECUTAR EN PRODUCCIÓN. Las credenciales son públicas y débiles a
  * propósito, para poder entrar rápido en local. El seed de producción es
@@ -10,12 +10,12 @@
  */
 import {
   PrismaClient,
+  CategoryMode,
   MemberStatus,
   Role,
   TournamentStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, randomBytes } from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -49,23 +49,6 @@ const ARQUEROS = [
   { name: 'Clint', surname: 'Barton' },
   { name: 'Ygritte', surname: 'del Norte' },
 ];
-
-/// Mismo PRNG que GroupDrawService, para que el sorteo del seed sea reproducible.
-function seededRandom(seed: string) {
-  const hash = createHash('sha256').update(seed).digest();
-  let x = hash.readUInt32LE(0) || 1;
-  let y = hash.readUInt32LE(4) || 2;
-  let z = hash.readUInt32LE(8) || 3;
-  let w = hash.readUInt32LE(12) || 4;
-  return () => {
-    const t = x ^ (x << 11);
-    x = y;
-    y = z;
-    z = w;
-    w = (w ^ (w >>> 19) ^ (t ^ (t >>> 8))) >>> 0;
-    return w / 0x100000000;
-  };
-}
 
 async function upsertUser(
   data: { email: string; password: string; name: string; surname: string },
@@ -109,7 +92,6 @@ async function main() {
     throw new Error('No hay categorías. Ejecuta primero `npm run seed`.');
   }
   const divisions = categories.filter((c) => c.kind === 'DIVISION');
-  const rand = seededRandom('galadhrym-dev');
 
   const members = [];
   for (const [i, arquero] of ARQUEROS.entries()) {
@@ -134,12 +116,12 @@ async function main() {
   }
   console.log(`✓ ${members.length} socios activos`);
 
-  // ---- Torneo en curso con marcador ----
+  // ---- Torneo con sus dos categorías ----
   const format = await prisma.scoringFormat.findFirst({
-    where: { name: 'WA 18m indoor' },
+    where: { name: 'Diana turca 0-1-2' },
   });
   if (!format)
-    throw new Error('Falta el formato WA 18m. Ejecuta `npm run seed`.');
+    throw new Error('Falta la diana turca 0-1-2. Ejecuta `npm run seed`.');
 
   const slug = 'torneo-demo-galadhrym';
   await prisma.tournament.deleteMany({ where: { slug } });
@@ -149,110 +131,55 @@ async function main() {
       slug,
       name: 'Torneo Demo Galadhrym',
       description:
-        'Torneo de demostración con puntajes cargados, para probar el marcador en vivo.',
+        'Torneo de demostración con inscritos en las dos categorías, listo para sortear.',
       location: 'Museo Ferroviario de Temuco',
       startsAt: new Date(),
-      scoringFormatId: format.id,
-      status: TournamentStatus.IN_PROGRESS,
+      status: TournamentStatus.REGISTRATION_OPEN,
       isPublic: true,
       maxParticipants: 40,
+      categories: {
+        create: [
+          {
+            name: 'Tiro tradicional',
+            order: 0,
+            mode: CategoryMode.SCORE,
+            scoringFormatId: format.id,
+            arrowsPerArcher: 3,
+            judgeId: judge.id,
+          },
+          {
+            name: 'Duelos',
+            order: 1,
+            mode: CategoryMode.KNOCKDOWN,
+            targetsToWin: 3,
+          },
+        ],
+      },
     },
+    include: { categories: { orderBy: { order: 'asc' } } },
   });
-  console.log(`✓ Torneo "${tournament.name}" (público, en curso)`);
+  console.log(
+    `✓ Torneo "${tournament.name}" (público, inscripciones abiertas)`,
+  );
 
-  const round = await prisma.round.create({
-    data: {
-      tournamentId: tournament.id,
-      name: 'Clasificatoria',
-      order: 0,
-      distance: 18,
-    },
-  });
-
-  // Inscripciones
-  const registrations = [];
-  for (const member of members) {
-    registrations.push(
+  // Todos en Tiro tradicional; la mitad también en Duelos, con el mismo número
+  const [traditional, duels] = tournament.categories;
+  for (const [i, member] of members.entries()) {
+    await prisma.tournamentParticipant.create({
+      data: { tournamentId: tournament.id, memberId: member.id, number: i + 1 },
+    });
+    for (const category of i % 2 === 0 ? [traditional, duels] : [traditional]) {
       await prisma.registration.create({
         data: {
           tournamentId: tournament.id,
           memberId: member.id,
+          categoryId: category.id,
           status: 'CONFIRMED',
         },
-      }),
-    );
-  }
-
-  // Dos grupos; el juez de prueba queda a cargo del primero
-  const groups = [];
-  for (let i = 0; i < 2; i++) {
-    groups.push(
-      await prisma.tournamentGroup.create({
-        data: {
-          tournamentId: tournament.id,
-          name: `Grupo ${String.fromCharCode(65 + i)}`,
-          order: i,
-          judgeId: i === 0 ? judge.id : null,
-        },
-      }),
-    );
-  }
-
-  const seed = randomBytes(8).toString('hex');
-  const drawResult = [];
-  for (const [i, registration] of registrations.entries()) {
-    const group = groups[i % groups.length];
-    await prisma.registration.update({
-      where: { id: registration.id },
-      data: { groupId: group.id, position: Math.floor(i / groups.length) + 1 },
-    });
-    drawResult.push({ groupId: group.id, registrationId: registration.id });
-  }
-  await prisma.groupDraw.create({
-    data: {
-      tournamentId: tournament.id,
-      seed,
-      strategy: 'RANDOM',
-      result: drawResult,
-      drawnById: admin.id,
-    },
-  });
-  console.log(`✓ ${groups.length} grupos sorteados (juez asignado al Grupo A)`);
-
-  // Puntajes: 6 series por arquero, con zonas verosímiles
-  const zones = format.zones as unknown as {
-    label: string;
-    value: number;
-    isInner?: boolean;
-  }[];
-  const pickable = zones.filter((z) => z.value >= 6);
-  let scoreCount = 0;
-
-  for (const member of members) {
-    for (let end = 1; end <= 6; end++) {
-      const arrows = Array.from({ length: format.arrowsPerEnd }, () => {
-        // Sesgo hacia el centro: los buenos puntajes son más probables
-        const idx = Math.floor(Math.pow(rand(), 1.7) * pickable.length);
-        return pickable[Math.min(idx, pickable.length - 1)];
       });
-
-      await prisma.score.create({
-        data: {
-          roundId: round.id,
-          memberId: member.id,
-          endNumber: end,
-          arrows: arrows.map((z) => ({ label: z.label, value: z.value })),
-          total: arrows.reduce((sum, z) => sum + z.value, 0),
-          innerTens: arrows.filter((z) => z.isInner).length,
-          tens: arrows.filter((z) => z.value === 10).length,
-          status: 'CONFIRMED',
-          recordedById: judge.id,
-        },
-      });
-      scoreCount++;
     }
   }
-  console.log(`✓ ${scoreCount} series cargadas`);
+  console.log(`✓ ${members.length} participantes numerados e inscritos`);
 
   // ---- Carrusel de imágenes en el home ----
   // Solo si no existe: las fotos que el admin sube desde el panel no deben

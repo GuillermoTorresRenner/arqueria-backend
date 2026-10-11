@@ -235,3 +235,12 @@ export class CancelActivityDto {
   @IsBoolean()
   notify?: boolean;
 }
+
+/// Categoría del torneo en la que se inscribe o de la que se retira. Si el
+/// torneo tiene una sola, puede omitirse.
+export class RegistrationCategoryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+}

@@ -1,21 +1,17 @@
-/// Formato de puntuación PARAMETRIZABLE. Las modalidades del club están por definir,
-/// así que aquí no se hardcodea ninguna regla (ni World Archery ni 3D): el torneo
-/// declara su formato y el backend valida cada flecha contra él.
+/// Zonas de una diana, PARAMETRIZABLES: las modalidades se cargan como datos
+/// (p. ej. «Diana turca 0-1-2») y el backend valida cada flecha contra ellas.
+/// Cuántas flechas se tiran lo define cada ronda de la categoría, no la diana.
 model ScoringFormat {
-  id           String   @id @default(cuid())
-  name         String   @unique /// "WA 18m indoor", "3D club"
-  description  String?
-  arrowsPerEnd Int /// flechas por serie
-  endsPerRound Int /// series por ronda
-  maxPerArrow  Int /// puntaje máximo de una flecha
-  /// Zonas válidas: [{ "label": "X", "value": 10, "isInner": true }, ...]
-  /// El orden define cómo se desempata (más X, luego más 10, etc.).
-  zones        Json
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String   @unique /// "Diana turca 0-1-2"
+  description String?
+  /// Zonas válidas: [{ "label": "2", "value": 2 }, { "label": "1", "value": 1 }, ...]
+  zones       Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  tournaments Tournament[]
+  categories TournamentCategory[]
 
   @@map("scoring_formats")
 }
@@ -29,8 +25,6 @@ model Tournament {
   startsAt        DateTime
   endsAt          DateTime?
   registrationEnd DateTime?
-  /// Opcional: un torneo creado desde el calendario define su modalidad después
-  scoringFormatId String?
   status          TournamentStatus @default(DRAFT)
   /// Publica el marcador en vivo para el público
   isPublic        Boolean          @default(false)
@@ -46,13 +40,11 @@ model Tournament {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  scoringFormat ScoringFormat?       @relation(fields: [scoringFormatId], references: [id], onDelete: Restrict)
   /// Restrict: una cuenta asignada a torneos no se borra, se desactiva
-  bankAccount   BankAccount?         @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
-  rounds        Round[]
-  groups        TournamentGroup[]
+  bankAccount   BankAccount?            @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  categories    TournamentCategory[]
+  participants  TournamentParticipant[]
   registrations Registration[]
-  draws         GroupDraw[]
   activity      Activity?
   judges        TournamentJudge[]
   documents     TournamentDocument[]
@@ -92,67 +84,72 @@ enum TournamentStatus {
   CANCELLED
 }
 
-model Round {
-  id           String   @id @default(cuid())
-  tournamentId String
-  name         String /// "Clasificatoria", "Eliminatoria"
-  order        Int      @default(0)
-  distance     Int? /// metros, si aplica a la modalidad
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  scores     Score[]
-
-  @@unique([tournamentId, order])
-  @@map("rounds")
+enum CategoryMode {
+  SCORE /// puntaje: diana por zonas; gana la suma mayor
+  KNOCKDOWN /// duelos: dianas abatibles; gana quien abate primero las fijadas
 }
 
-/// Grupo/paralela. Se arma por sorteo aleatorio y el admin puede reasignar a mano.
-model TournamentGroup {
-  id           String   @id @default(cuid())
-  tournamentId String
-  name         String /// "Paralela A", "Grupo 1"
-  order        Int      @default(0)
-  /// Juez asignado: solo él (y un ADMIN) puede cargar puntajes de este grupo.
-  judgeId      String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+/// Categoría de competencia de un torneo («Tiro tradicional», «Duelos»). Cada
+/// una tiene su propio cuadro de eliminación directa 1 contra 1.
+model TournamentCategory {
+  id              String       @id @default(cuid())
+  tournamentId    String
+  name            String
+  order           Int          @default(0)
+  mode            CategoryMode @default(SCORE)
+  /// SCORE: zonas de la diana
+  scoringFormatId String?
+  /// SCORE: flechas por arquero en cada ronda (cada ronda puede cambiarlo)
+  arrowsPerArcher Int          @default(3)
+  /// KNOCKDOWN: dianas abatidas para ganar el enfrentamiento
+  targetsToWin    Int          @default(3)
+  /// Flechas por arquero en cada tanda de desempate (muerte súbita)
+  shootOffArrows  Int          @default(1)
+  /// Flechas por arquero en la minironda entre perdedores empatados
+  playoffArrows   Int          @default(1)
+  /// Juez de la categoría: cuenta y valida en la diana
+  judgeId         String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  judge         Users?         @relation(fields: [judgeId], references: [id], onDelete: SetNull)
+  scoringFormat ScoringFormat? @relation(fields: [scoringFormatId], references: [id], onDelete: Restrict)
+  judge         Users?         @relation("CategoryJudge", fields: [judgeId], references: [id], onDelete: SetNull)
   registrations Registration[]
+  rounds        BracketRound[]
 
-  @@unique([tournamentId, order])
+  @@unique([tournamentId, name])
   @@index([judgeId])
-  @@map("tournament_groups")
+  @@map("tournament_categories")
 }
 
-/// Registro del sorteo, con su semilla, para que sea auditable y reproducible.
-model GroupDraw {
+/// Arquero en un torneo, con su número de participante: una serie consecutiva
+/// 1..N que se asigna al inscribirse y es el mismo en todas sus categorías.
+/// Hasta el sorteo se renumera si alguien se retira; desde ahí queda fijo.
+model TournamentParticipant {
   id           String   @id @default(cuid())
   tournamentId String
-  seed         String /// semilla usada por el PRNG
-  strategy     String   @default("RANDOM")
-  /// Foto del resultado: [{ groupId, memberIds: [...] }]
-  result       Json
-  drawnById    String?
+  memberId     String
+  number       Int
   createdAt    DateTime @default(now())
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  drawnBy    Users?     @relation(fields: [drawnById], references: [id], onDelete: SetNull)
+  tournament    Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member        Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  registrations Registration[]
+  matchEntries  MatchEntry[]
 
-  @@index([tournamentId, createdAt])
-  @@map("group_draws")
+  @@unique([tournamentId, memberId])
+  @@unique([tournamentId, number])
+  @@map("tournament_participants")
 }
 
+/// Inscripción en UNA categoría: cada una se paga y se confirma por separado.
+/// El participante (y su número) es el par torneo + socio.
 model Registration {
   id            String             @id @default(cuid())
   tournamentId  String
   memberId      String
-  groupId       String?
-  /// Posición dentro del grupo (diana/petate)
-  position      Int?
+  categoryId    String
   /// PENDING: preinscrito, esperando el comprobante de pago.
   /// CONFIRMED: un admin verificó el pago y lo dejó inscrito.
   status        RegistrationStatus @default(PENDING)
@@ -161,13 +158,14 @@ model Registration {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
-  tournament  Tournament       @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  member      Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  group       TournamentGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  confirmedBy Users?           @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  tournament  Tournament            @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  member      Member                @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  category    TournamentCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  participant TournamentParticipant @relation(fields: [tournamentId, memberId], references: [tournamentId, memberId], onDelete: Restrict)
+  confirmedBy Users?                @relation("RegistrationConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
 
-  @@unique([tournamentId, memberId])
-  @@index([groupId])
+  @@unique([categoryId, memberId])
+  @@index([tournamentId, memberId])
   @@map("registrations")
 }
 

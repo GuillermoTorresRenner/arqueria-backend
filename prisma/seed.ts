@@ -145,43 +145,16 @@ const CATEGORIES = [
   },
 ];
 
-/// Formatos de ejemplo. Las modalidades reales del club están por definir:
-/// cuando se definan, se cargan aquí o desde el panel, sin tocar código.
+/// Dianas del reglamento del club. Otras modalidades se cargan desde el panel
+/// sin tocar código.
 const SCORING_FORMATS = [
   {
-    name: 'WA 18m indoor',
-    description:
-      'Tiro al blanco bajo techo, 18 metros, 20 series de 3 flechas.',
-    arrowsPerEnd: 3,
-    endsPerRound: 20,
-    maxPerArrow: 10,
+    name: 'Diana turca 0-1-2',
+    description: 'Diana tipo turco de tres puntuaciones, a 20 metros.',
     zones: [
-      { label: 'X', value: 10, isInner: true },
-      { label: '10', value: 10 },
-      { label: '9', value: 9 },
-      { label: '8', value: 8 },
-      { label: '7', value: 7 },
-      { label: '6', value: 6 },
-      { label: '5', value: 5 },
-      { label: '4', value: 4 },
-      { label: '3', value: 3 },
       { label: '2', value: 2 },
       { label: '1', value: 1 },
-      { label: 'M', value: 0 },
-    ],
-  },
-  {
-    name: '3D recorrido',
-    description: 'Siluetas 3D a distancias desconocidas.',
-    arrowsPerEnd: 1,
-    endsPerRound: 24,
-    maxPerArrow: 11,
-    zones: [
-      { label: '11', value: 11, isInner: true },
-      { label: '10', value: 10 },
-      { label: '8', value: 8 },
-      { label: '5', value: 5 },
-      { label: 'M', value: 0 },
+      { label: '0', value: 0 },
     ],
   },
 ];
@@ -233,7 +206,7 @@ async function main() {
       create: format,
     });
   }
-  console.log(`✓ ${SCORING_FORMATS.length} formatos de puntuación`);
+  console.log(`✓ ${SCORING_FORMATS.length} dianas`);
 
   for (const section of SECTIONS) {
     const { blocks, ...sectionData } = section;

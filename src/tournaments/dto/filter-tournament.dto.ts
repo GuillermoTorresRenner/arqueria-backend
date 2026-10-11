@@ -40,11 +40,6 @@ export class FilterTournamentDto {
   @IsDateString()
   to?: string;
 
-  @ApiPropertyOptional({ description: 'Filtra por formato de puntuación' })
-  @IsOptional()
-  @IsString()
-  scoringFormatId?: string;
-
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Type(() => Number)
