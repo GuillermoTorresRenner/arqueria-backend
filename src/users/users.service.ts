@@ -249,7 +249,7 @@ export class UsersService {
       surname: user.surname,
       phone: user.phone ?? null,
       role: user.userRoles,
-      avatar: buildUserAvatarUrl(user.avatar),
+      avatar: buildUserAvatarUrl(user.avatar, user.updatedAt),
       isActive: user.isActive,
       emailVerified: user.emailVerified,
       emailVerifiedAt: user.emailVerifiedAt ?? null,
@@ -557,6 +557,27 @@ export class UsersService {
         error,
       });
     }
+  }
+
+  /// Quita el avatar: borra el archivo y deja al usuario sin foto
+  async removeAvatar(id: string) {
+    const existingUser = await this.findById(id);
+    if (existingUser.avatar) {
+      const filename = existingUser.avatar.replace(/^users_avatar\//, '');
+      // Solo nombres generados por nosotros: nunca rutas arbitrarias
+      if (/^[\w-]+\.webp$/.test(filename)) {
+        await this.uploadService
+          .removeFile(path.join(this.uploadService.usersAvatarPath, filename))
+          .catch(() => {
+            /* si ya no existe, no hay nada que limpiar */
+          });
+      }
+    }
+    const user = await this.prismaService.users.update({
+      where: { id },
+      data: { avatar: null },
+    });
+    return this.formatUserResponse(user);
   }
 
   async desactivateUser(id: string) {

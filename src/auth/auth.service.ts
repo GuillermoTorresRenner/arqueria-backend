@@ -252,7 +252,7 @@ export class AuthService {
       surname: user.surname,
       email: user.email,
       role: user.userRoles || null,
-      avatar: buildUserAvatarUrl(user.avatar),
+      avatar: buildUserAvatarUrl(user.avatar, user.updatedAt),
       isActive: user.isActive,
       lastConnection: user.lastConnection,
     };

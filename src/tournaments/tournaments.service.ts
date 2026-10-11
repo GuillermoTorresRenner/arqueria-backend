@@ -142,6 +142,8 @@ export class TournamentsService {
         skip: (page - 1) * limit,
         take: limit,
         include: {
+          // La actividad del calendario: ahí se gestionan inscripciones y pagos
+          activity: { select: { id: true, cancelledAt: true } },
           categories: {
             orderBy: { order: 'asc' },
             select: { id: true, name: true, mode: true },

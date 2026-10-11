@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
+import { AVATAR_UPLOAD } from './user.helper';
 import { CreateUserDto } from './dto/create-user.dto';
 import { FilterUserDto } from './dto/filter-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -157,7 +158,7 @@ export class UsersController {
 
   @Patch('me')
   @Auth()
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(FileInterceptor('avatar', AVATAR_UPLOAD))
   @ApiOperation({
     summary: 'Actualizar mi perfil',
     description:
@@ -171,6 +172,13 @@ export class UsersController {
     // Nadie se cambia su propio rol ni se reactiva a sí mismo.
     const { role: _role, isActive: _isActive, ...safe } = updateUserDto;
     return this.usersService.updateUserData(user.userID, safe, avatar);
+  }
+
+  @Delete('me/avatar')
+  @Auth()
+  @ApiOperation({ summary: 'Quitar mi avatar' })
+  removeMyAvatar(@ActiveUser() user: ActiveUserData) {
+    return this.usersService.removeAvatar(user.userID);
   }
 
   @Patch('me/password')
@@ -194,7 +202,7 @@ export class UsersController {
 
   @Patch(':id')
   @Auth([Roles.ADMIN])
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(FileInterceptor('avatar', AVATAR_UPLOAD))
   @ApiOperation({ summary: 'Actualizar un usuario' })
   update(
     @Param('id') id: string,
@@ -216,6 +224,13 @@ export class UsersController {
       }
     }
     return this.usersService.updateUserData(id, updateUserDto, avatar);
+  }
+
+  @Delete(':id/avatar')
+  @Auth([Roles.ADMIN])
+  @ApiOperation({ summary: 'Quitar el avatar de un usuario' })
+  removeAvatar(@Param('id') id: string) {
+    return this.usersService.removeAvatar(id);
   }
 
   @Delete(':id')
