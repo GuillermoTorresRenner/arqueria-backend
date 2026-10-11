@@ -6,7 +6,6 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
-  IsEmail,
   IsIn,
   IsEnum,
   IsInt,
@@ -44,50 +43,8 @@ export class FeeDto {
   amount: number;
 }
 
-/// Datos para pagar la inscripción por transferencia
+/// Lo propio del pago de cada torneo; la cuenta va en bankAccountId
 export class PaymentInfoDto {
-  @ApiPropertyOptional({ example: 'Banco Estado' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  @Transform(trim)
-  bankName?: string;
-
-  @ApiPropertyOptional({ example: 'Cuenta Vista / CuentaRUT' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(60)
-  @Transform(trim)
-  accountType?: string;
-
-  @ApiPropertyOptional({ example: '12345678' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  @Transform(trim)
-  accountNumber?: string;
-
-  @ApiPropertyOptional({ example: 'Comunidad Galadhrym' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  @Transform(trim)
-  holderName?: string;
-
-  @ApiPropertyOptional({ example: '65.123.456-7' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  @Transform(trim)
-  holderRut?: string;
-
-  @ApiPropertyOptional({ example: 'arqueria.galadhrym@gmail.com' })
-  @IsOptional()
-  @ValidateIf((_, v) => v !== '')
-  @IsEmail({}, { message: 'Correo del titular inválido' })
-  @Transform(trim)
-  holderEmail?: string;
-
   @ApiPropertyOptional({
     example: 'Indica tu nombre en el asunto de la transferencia.',
   })
@@ -143,6 +100,13 @@ export class TournamentDetailsDto {
   @Min(1)
   @Max(10_000)
   maxParticipants?: number | null;
+
+  @ApiPropertyOptional({
+    description: 'Cuenta guardada a la que se transfiere (ver /bank-accounts)',
+  })
+  @IsOptional()
+  @IsString()
+  bankAccountId?: string | null;
 
   @ApiPropertyOptional({ type: PaymentInfoDto })
   @IsOptional()

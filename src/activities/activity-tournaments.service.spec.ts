@@ -18,8 +18,18 @@ describe('ActivityTournamentsService', () => {
       registrationEnd: null as Date | null,
       maxParticipants: null as number | null,
       paymentInfo: {
-        bankName: 'Banco Estado',
+        instructions: 'Indica tu nombre',
         fees: [{ label: 'Socio', amount: 10000 }],
+      },
+      bankAccount: {
+        id: 'b1',
+        bankName: 'Banco de Chile',
+        accountType: 'Cuenta Vista',
+        accountNumber: '00-061-12262-78',
+        holderName: 'Eduardo Rivas',
+        holderRut: '9.731.978-2',
+        holderEmail: null,
+        isActive: true,
       },
     };
     const activity = {
@@ -54,6 +64,10 @@ describe('ActivityTournamentsService', () => {
       tournament: {
         create: jest.fn(async () => ({ id: 't2' })),
         update: jest.fn(),
+        findUnique: jest.fn(async () => ({ bankAccountId: 'b1' })),
+      },
+      bankAccount: {
+        findUnique: jest.fn(async (): Promise<any> => tournament.bankAccount),
       },
       tournamentDocument: { findMany: jest.fn(async () => []) },
     };
@@ -71,7 +85,7 @@ describe('ActivityTournamentsService', () => {
   };
 
   it('la inscripción queda pendiente y llega el correo con los datos de pago', async () => {
-    const { prisma, email, service, tournament } = build();
+    const { prisma, email, service } = build();
     await expect(service.register('a1', 'u1')).resolves.toEqual({
       status: 'PENDING',
       emailSent: true,
@@ -83,7 +97,16 @@ describe('ActivityTournamentsService', () => {
       expect.objectContaining({
         to: 'ana@x.cl',
         memberName: 'Ana Arquera',
-        paymentInfo: tournament.paymentInfo,
+        paymentInfo: {
+          bankName: 'Banco de Chile',
+          accountType: 'Cuenta Vista',
+          accountNumber: '00-061-12262-78',
+          holderName: 'Eduardo Rivas',
+          holderRut: '9.731.978-2',
+          holderEmail: undefined,
+          instructions: 'Indica tu nombre',
+          fees: [{ label: 'Socio', amount: 10000 }],
+        },
       }),
     );
   });
@@ -170,6 +193,45 @@ describe('ActivityTournamentsService', () => {
       where: { id: 'a1' },
       data: { tournamentId: 't2' },
     });
+  });
+
+  it('asigna una cuenta guardada y guarda aparte instrucciones y montos', async () => {
+    const { prisma, service, activity } = build();
+    await service.sync(activity as any, {
+      bankAccountId: 'b1',
+      paymentInfo: {
+        instructions: '  Indica tu nombre ',
+        fees: [
+          { label: 'Socio', amount: 10000 },
+          { label: ' ', amount: 0 },
+        ],
+      },
+    });
+    const data = (prisma.tournament.update.mock.calls as any)[0][0].data;
+    expect(data.bankAccountId).toBe('b1');
+    expect(data.paymentInfo).toEqual({
+      instructions: 'Indica tu nombre',
+      fees: [{ label: 'Socio', amount: 10000 }],
+    });
+  });
+
+  it('una cuenta desactivada se conserva pero no se elige en otro torneo', async () => {
+    const { prisma, service, activity, tournament } = build();
+    prisma.bankAccount.findUnique.mockResolvedValue({
+      ...tournament.bankAccount,
+      isActive: false,
+    });
+    // El torneo ya la tenía: se puede guardar sin cambiarla
+    await expect(
+      service.sync(activity as any, { bankAccountId: 'b1' }),
+    ).resolves.toBeUndefined();
+    // Uno nuevo no puede elegirla
+    await expect(
+      service.sync({ ...activity, tournamentId: null } as any, {
+        bankAccountId: 'b1',
+      }),
+    ).rejects.toThrow(/desactivada/);
+    expect(prisma.tournament.create).not.toHaveBeenCalled();
   });
 
   it('rechaza archivos que no son documentos', async () => {

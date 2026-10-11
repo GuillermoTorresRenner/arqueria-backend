@@ -19,6 +19,7 @@ import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ActiveUser, ActiveUserData, Auth, Roles } from '../auth';
 import { ActivitiesService } from './activities.service';
 import { PlacesService } from './places.service';
+import { BankAccountsService } from './bank-accounts.service';
 import {
   ActivityTournamentsService,
   MAX_DOCUMENT_SIZE,
@@ -27,12 +28,14 @@ import {
   ActivityRangeDto,
   CancelActivityDto,
   CreateActivityDto,
+  CreateBankAccountDto,
   CreatePlaceDto,
   GeocodeQueryDto,
   RegistrationStatusDto,
   ReverseGeocodeDto,
   UpcomingQueryDto,
   UpdateActivityDto,
+  UpdateBankAccountDto,
   UpdatePlaceDto,
   WeatherPreviewDto,
 } from './dto';
@@ -83,6 +86,41 @@ export class PlacesController {
   })
   remove(@Param('id') id: string) {
     return this.placesService.remove(id);
+  }
+}
+
+@ApiTags('Cuentas bancarias')
+@Controller('bank-accounts')
+@Auth([Roles.ADMIN])
+export class BankAccountsController {
+  constructor(private readonly bankAccountsService: BankAccountsService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Cuentas guardadas, incluidas las inactivas' })
+  findAll() {
+    return this.bankAccountsService.findAll();
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Crear cuenta' })
+  create(@Body() dto: CreateBankAccountDto) {
+    return this.bankAccountsService.create(dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Actualizar o desactivar cuenta' })
+  update(@Param('id') id: string, @Body() dto: UpdateBankAccountDto) {
+    return this.bankAccountsService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({
+    summary: 'Eliminar cuenta',
+    description:
+      'Solo si no está asignada a torneos; si lo está, se desactiva.',
+  })
+  remove(@Param('id') id: string) {
+    return this.bankAccountsService.remove(id);
   }
 }
 

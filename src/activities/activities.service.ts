@@ -18,7 +18,8 @@ import { WeatherService } from '../weather/weather.service';
 import { CancelActivityDto, CreateActivityDto, UpdateActivityDto } from './dto';
 import {
   ActivityTournamentsService,
-  PaymentInfo,
+  TournamentPayment,
+  paymentFor,
 } from './activity-tournaments.service';
 
 /// Inscripciones vivas (preinscritos e inscritos)
@@ -92,7 +93,7 @@ function withPublicFees<
 >(activity: T) {
   if (!activity.tournament) return activity;
   const { paymentInfo, ...tournament } = activity.tournament;
-  const fees = (paymentInfo as PaymentInfo | null)?.fees ?? [];
+  const fees = (paymentInfo as TournamentPayment | null)?.fees ?? [];
   return { ...activity, tournament: { ...tournament, fees } };
 }
 
@@ -376,6 +377,7 @@ export class ActivitiesService {
         tournament: {
           select: {
             ...TOURNAMENT_PUBLIC_SELECT,
+            bankAccount: true,
             registrations: member
               ? {
                   where: { memberId: member.id },
@@ -398,7 +400,7 @@ export class ActivitiesService {
         if (!tournament) {
           return { ...a, tournament, attending: Boolean(attendances?.length) };
         }
-        const { registrations, paymentInfo, ...t } = tournament;
+        const { registrations, paymentInfo, bankAccount, ...t } = tournament;
         const mine = registrations?.find(
           (r) => r.status !== RegistrationStatus.WITHDRAWN,
         );
@@ -407,8 +409,8 @@ export class ActivitiesService {
           attending: false,
           tournament: {
             ...t,
-            fees: (paymentInfo as PaymentInfo | null)?.fees ?? [],
-            paymentInfo: paymentInfo as PaymentInfo | null,
+            fees: (paymentInfo as TournamentPayment | null)?.fees ?? [],
+            paymentInfo: paymentFor({ paymentInfo, bankAccount }),
           },
           registration: mine ?? null,
         };

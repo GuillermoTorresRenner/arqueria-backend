@@ -39,14 +39,16 @@ model Tournament {
   rules           String?
   /// Video instructivo de YouTube
   youtubeUrl      String?
-  /// Datos de transferencia: banco, cuenta, titular, instrucciones y montos
-  /// ({ bankName, accountType, accountNumber, holderName, holderRut,
-  /// holderEmail, instructions, fees: [{ label, amount }] })
+  /// Cuenta a la que se transfiere la inscripción (ver BankAccount)
+  bankAccountId   String?
+  /// Lo propio de cada torneo: { instructions, fees: [{ label, amount }] }
   paymentInfo     Json?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   scoringFormat ScoringFormat?       @relation(fields: [scoringFormatId], references: [id], onDelete: Restrict)
+  /// Restrict: una cuenta asignada a torneos no se borra, se desactiva
+  bankAccount   BankAccount?         @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
   rounds        Round[]
   groups        TournamentGroup[]
   registrations Registration[]
@@ -56,7 +58,30 @@ model Tournament {
   documents     TournamentDocument[]
 
   @@index([status, startsAt])
+  @@index([bankAccountId])
   @@map("tournaments")
+}
+
+/// Cuentas bancarias para pagar inscripciones por transferencia. Se guardan
+/// una vez y se eligen desde un desplegable en cada torneo.
+model BankAccount {
+  id            String   @id @default(cuid())
+  bankName      String
+  accountType   String
+  accountNumber String
+  holderName    String
+  holderRut     String
+  holderEmail   String?
+  /// Una cuenta en desuso no se ofrece en los torneos nuevos, pero los
+  /// antiguos la conservan.
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tournaments Tournament[]
+
+  @@unique([bankName, accountNumber])
+  @@map("bank_accounts")
 }
 
 enum TournamentStatus {

@@ -9,6 +9,7 @@ import {
 import {
   Activity,
   ActivityType,
+  BankAccount,
   MemberStatus,
   Prisma,
   RegistrationStatus,
@@ -50,15 +51,43 @@ export const DOCUMENT_TYPES: Record<string, string[]> = {
 };
 export const MAX_DOCUMENT_SIZE = 20 * 1024 * 1024;
 
-export interface PaymentInfo {
+/// Lo que se guarda en Tournament.paymentInfo: lo propio de cada torneo
+export interface TournamentPayment {
+  instructions?: string;
+  fees?: { label: string; amount: number }[];
+}
+
+/// Datos completos para transferir: la cuenta asignada más instrucciones y
+/// montos del torneo. Es lo que reciben el correo y el socio.
+export interface PaymentInfo extends TournamentPayment {
   bankName?: string;
   accountType?: string;
   accountNumber?: string;
   holderName?: string;
   holderRut?: string;
   holderEmail?: string;
-  instructions?: string;
-  fees?: { label: string; amount: number }[];
+}
+
+/// Une la cuenta asignada con instrucciones y montos del torneo
+export function paymentFor(tournament: {
+  paymentInfo: Prisma.JsonValue;
+  bankAccount: BankAccount | null;
+}): PaymentInfo | null {
+  const own = tournament.paymentInfo as TournamentPayment | null;
+  const account = tournament.bankAccount;
+  if (!own && !account) return null;
+  return {
+    ...(account && {
+      bankName: account.bankName,
+      accountType: account.accountType,
+      accountNumber: account.accountNumber,
+      holderName: account.holderName,
+      holderRut: account.holderRut,
+      holderEmail: account.holderEmail ?? undefined,
+    }),
+    instructions: own?.instructions,
+    fees: own?.fees ?? [],
+  };
 }
 
 /// Multer suele entregar el nombre del archivo leído como latin1
@@ -106,6 +135,13 @@ export class ActivityTournamentsService {
       return;
     }
 
+    if (details?.bankAccountId) {
+      await this.assertBankAccount(
+        details.bankAccountId,
+        activity.tournamentId,
+      );
+    }
+
     const data = {
       name: activity.title,
       startsAt: activity.startsAt,
@@ -130,6 +166,10 @@ export class ActivityTournamentsService {
           details.maxParticipants === undefined
             ? undefined
             : details.maxParticipants || null,
+        bankAccountId:
+          details.bankAccountId === undefined
+            ? undefined
+            : details.bankAccountId || null,
         paymentInfo:
           details.paymentInfo === undefined
             ? undefined
@@ -166,14 +206,29 @@ export class ActivityTournamentsService {
     if (details?.judgeIds) await this.setJudges(tournamentId, details.judgeIds);
   }
 
-  /// Datos de pago del último torneo, para no reescribirlos en cada uno
+  /// Cuenta, instrucciones y montos del último torneo, para no reescribirlos
+  /// en cada uno. Una cuenta ya desactivada no se propone.
   async paymentDefaults() {
     const last = await this.prisma.tournament.findFirst({
-      where: { paymentInfo: { not: Prisma.DbNull } },
+      where: {
+        OR: [
+          { paymentInfo: { not: Prisma.DbNull } },
+          { bankAccountId: { not: null } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
-      select: { paymentInfo: true },
+      select: {
+        paymentInfo: true,
+        bankAccount: { select: { id: true, isActive: true } },
+      },
     });
-    return (last?.paymentInfo as PaymentInfo | null) ?? null;
+    if (!last) return null;
+    const own = last.paymentInfo as TournamentPayment | null;
+    return {
+      bankAccountId: last.bankAccount?.isActive ? last.bankAccount.id : null,
+      instructions: own?.instructions,
+      fees: own?.fees ?? [],
+    };
   }
 
   /// Borra la ficha del torneo de una actividad que se elimina
@@ -262,7 +317,7 @@ export class ActivityTournamentsService {
         .filter(Boolean)
         .join(' '),
       activity,
-      paymentInfo: tournament.paymentInfo as PaymentInfo | null,
+      paymentInfo: paymentFor(tournament),
     });
     return { status: registration.status, emailSent };
   }
@@ -394,13 +449,34 @@ export class ActivityTournamentsService {
   private async loadTournament(activityId: string) {
     const activity = await this.prisma.activity.findUnique({
       where: { id: activityId },
-      include: { place: true, tournament: true },
+      include: {
+        place: true,
+        tournament: { include: { bankAccount: true } },
+      },
     });
     if (!activity) throw new NotFoundException('Actividad no encontrada');
     if (activity.type !== ActivityType.TOURNAMENT || !activity.tournament) {
       throw new BadRequestException('Esta actividad no es un torneo');
     }
     return { activity, tournament: activity.tournament };
+  }
+
+  /// Una cuenta desactivada se puede conservar, pero no elegir de nuevo
+  private async assertBankAccount(id: string, tournamentId: string | null) {
+    const account = await this.prisma.bankAccount.findUnique({
+      where: { id },
+    });
+    if (!account) throw new BadRequestException('La cuenta bancaria no existe');
+    if (account.isActive) return;
+    const current = tournamentId
+      ? await this.prisma.tournament.findUnique({
+          where: { id: tournamentId },
+          select: { bankAccountId: true },
+        })
+      : null;
+    if (current?.bankAccountId !== id) {
+      throw new BadRequestException('Esa cuenta bancaria está desactivada');
+    }
   }
 
   private async setJudges(tournamentId: string, judgeIds: string[]) {
@@ -465,16 +541,9 @@ export class ActivityTournamentsService {
     });
   }
 
-  private cleanPayment(info: PaymentInfo): PaymentInfo {
-    const text = (v?: string) => v?.trim() || undefined;
+  private cleanPayment(info: TournamentPayment): TournamentPayment {
     return {
-      bankName: text(info.bankName),
-      accountType: text(info.accountType),
-      accountNumber: text(info.accountNumber),
-      holderName: text(info.holderName),
-      holderRut: text(info.holderRut),
-      holderEmail: text(info.holderEmail),
-      instructions: text(info.instructions),
+      instructions: info.instructions?.trim() || undefined,
       fees: (info.fees ?? []).filter((f) => f.label.trim()),
     };
   }
