@@ -78,6 +78,10 @@ describe('ActivityTournamentsService', () => {
         delete: jest.fn(),
       },
       draw: { count: jest.fn(async () => 0) },
+      bracketRound: {
+        count: jest.fn(async () => 0),
+        deleteMany: jest.fn(async () => ({})),
+      },
       tournamentCategory: {
         findMany: jest.fn(async (): Promise<any[]> => [
           {
@@ -103,6 +107,7 @@ describe('ActivityTournamentsService', () => {
         create: jest.fn(async () => ({ id: 't2' })),
         update: jest.fn(),
         findUnique: jest.fn(async () => ({ bankAccountId: 'b1' })),
+        delete: jest.fn(async () => ({})),
       },
       bankAccount: {
         findUnique: jest.fn(async (): Promise<any> => tournament.bankAccount),
@@ -186,6 +191,15 @@ describe('ActivityTournamentsService', () => {
     expect(prisma.registration.create).toHaveBeenCalledWith({
       data: { tournamentId: 't1', memberId: 'm1', categoryId: 'c2' },
     });
+  });
+
+  it('no se inscribe en una categoría ya sorteada', async () => {
+    const { prisma, service } = build();
+    prisma.bracketRound.count.mockResolvedValueOnce(1);
+    await expect(service.register('a1', 'u1')).rejects.toThrow(
+      /ya se sortearon/,
+    );
+    expect(prisma.registration.create).not.toHaveBeenCalled();
   });
 
   it('con varias categorías hay que elegir una', async () => {
@@ -463,6 +477,18 @@ describe('ActivityTournamentsService', () => {
         }),
       ).rejects.toThrow(/jueces del torneo/);
     });
+  });
+
+  it('un torneo con cuadro se borra con su cuadro, en una transacción', async () => {
+    const { prisma, service } = build();
+    await service.removeFor({ tournamentId: 't1' });
+    expect(prisma.bracketRound.deleteMany).toHaveBeenCalledWith({
+      where: { category: { tournamentId: 't1' } },
+    });
+    expect(prisma.tournament.delete).toHaveBeenCalledWith({
+      where: { id: 't1' },
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
   });
 
   it('rechaza archivos que no son documentos', async () => {

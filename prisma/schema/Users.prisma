@@ -20,6 +20,7 @@ model Users {
   judgedCategories       TournamentCategory[] @relation("CategoryJudge")
   draws                  Draw[]
   shotsRecorded          MatchShot[]          @relation("ShotRecordedBy")
+  roundsClosed           BracketRound[]       @relation("RoundClosedBy")
   activitiesCreated      Activity[]           @relation("ActivityCreatedBy")
   tournamentJudging      TournamentJudge[]    @relation("TournamentJudges")
   registrationsConfirmed Registration[]       @relation("RegistrationConfirmedBy")

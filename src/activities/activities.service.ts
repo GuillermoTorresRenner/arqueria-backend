@@ -352,8 +352,9 @@ export class ActivitiesService {
   async remove(id: string) {
     const activity = await this.prisma.activity.findUnique({ where: { id } });
     if (!activity) throw new NotFoundException('Actividad no encontrada');
-    await this.prisma.activity.delete({ where: { id } });
+    // El torneo antes que la actividad: si su borrado falla, no queda huérfano
     await this.tournaments.removeFor(activity);
+    await this.prisma.activity.delete({ where: { id } });
     return { id };
   }
 

@@ -309,6 +309,14 @@ export class ActivityTournamentsService {
     }
 
     const category = this.pickCategory(tournament.categories, categoryId);
+    const drawn = await this.prisma.bracketRound.count({
+      where: { categoryId: category.id },
+    });
+    if (drawn > 0) {
+      throw new BadRequestException(
+        `Los enfrentamientos de ${category.name} ya se sortearon`,
+      );
+    }
     const existing = await this.prisma.registration.findUnique({
       where: {
         categoryId_memberId: { categoryId: category.id, memberId: member.id },
@@ -688,10 +696,25 @@ export class ActivityTournamentsService {
     }
     for (const c of list) {
       const existing = c.id ? byId.get(c.id) : undefined;
-      if (existing && existing._count.rounds > 0 && existing.mode !== c.mode) {
-        throw new ConflictException(
-          `«${existing.name}» ya tiene cuadro: no puede cambiar de modalidad`,
-        );
+      if (existing && existing._count.rounds > 0) {
+        if (existing.mode !== c.mode) {
+          throw new ConflictException(
+            `«${existing.name}» ya tiene cuadro: no puede cambiar de modalidad`,
+          );
+        }
+        // Cambiarlas recalcularía resultados ya jugados
+        const fixed =
+          (c.mode === CategoryMode.SCORE &&
+            (c.scoringFormatId || null) !== existing.scoringFormatId) ||
+          (c.shootOffArrows !== undefined &&
+            c.shootOffArrows !== existing.shootOffArrows) ||
+          (c.playoffArrows !== undefined &&
+            c.playoffArrows !== existing.playoffArrows);
+        if (fixed) {
+          throw new ConflictException(
+            `«${existing.name}» ya tiene cuadro: su diana y sus desempates no se pueden cambiar`,
+          );
+        }
       }
     }
 
@@ -803,7 +826,13 @@ export class ActivityTournamentsService {
       where: { tournamentId: id },
       select: { path: true },
     });
-    await this.prisma.tournament.delete({ where: { id } });
+    // El cuadro primero: sus enfrentamientos impiden borrar a los participantes
+    await this.prisma.$transaction([
+      this.prisma.bracketRound.deleteMany({
+        where: { category: { tournamentId: id } },
+      }),
+      this.prisma.tournament.delete({ where: { id } }),
+    ]);
     await Promise.all(documents.map((d) => this.removeFile(d.path)));
   }
 

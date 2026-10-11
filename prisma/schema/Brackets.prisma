@@ -4,17 +4,27 @@
 
 /// Ronda del cuadro de una categoría (1 = primera)
 model BracketRound {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   categoryId      String
   number          Int
   /// SCORE: flechas por arquero en esta ronda; null = las de la categoría
   arrowsPerArcher Int?
   /// KNOCKDOWN: dianas para ganar en esta ronda; null = las de la categoría
   targetsToWin    Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  /// Arqueros de la ronda en orden de cuadro (TournamentParticipant.id): los
+  /// pares se forman de a dos y el que queda sin rival va al final
+  entrants        Json      @default("[]")
+  /// Ronda impar: quien quedó sin rival (por sorteo) y espera al mejor perdedor
+  byeId           String?
+  /// Auditoría: el juez o un admin revisó los resultados y cerró la ronda.
+  /// Recién entonces se arma la siguiente.
+  closedAt        DateTime?
+  closedById      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   category TournamentCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  closedBy Users?             @relation("RoundClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   draws    Draw[]
   matches  Match[]
 

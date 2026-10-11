@@ -17,6 +17,7 @@ import { ContentModule } from './content/content.module';
 import { MembersModule } from './members/members.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 import { ScoringModule } from './scoring/scoring.module';
+import { BracketsModule } from './brackets/brackets.module';
 import { ActivitiesModule } from './activities/activities.module';
 
 @Module({
@@ -43,6 +44,7 @@ import { ActivitiesModule } from './activities/activities.module';
     MembersModule,
     TournamentsModule,
     ScoringModule,
+    BracketsModule,
     ActivitiesModule,
   ],
   controllers: [],
