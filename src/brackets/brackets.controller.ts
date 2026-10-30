@@ -50,7 +50,7 @@ export class BracketsController {
   @ApiOperation({
     summary: 'Sortear',
     description:
-      'Primera ronda: todos los pares. Ronda impar posterior: quién queda sin rival. Por algoritmo (con semilla) o como salió de la tómbola.',
+      'Primera ronda: los pares y, si los inscritos no son potencia de 2, quiénes pasan por bye a la segunda. Por algoritmo (con semilla) o como salió de la tómbola.',
   })
   draw(
     @Param('categoryId') id: string,
@@ -63,7 +63,7 @@ export class BracketsController {
   @Delete('categories/:categoryId/draw')
   @Auth([Roles.ADMIN])
   @ApiOperation({
-    summary: 'Deshacer el último sorteo (sin resultados cargados)',
+    summary: 'Deshacer el sorteo (sin resultados cargados)',
   })
   undoDraw(
     @Param('categoryId') id: string,

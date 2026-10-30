@@ -39,7 +39,7 @@ export class DrawDto {
       [3, 7],
       [1, 12],
     ],
-    description: 'MANUAL, primera ronda: pares por número de participante',
+    description: 'MANUAL: pares por número de participante',
   })
   @IsOptional()
   @IsArray()
@@ -50,13 +50,15 @@ export class DrawDto {
   pairs?: number[][];
 
   @ApiPropertyOptional({
-    example: 5,
-    description: 'MANUAL: número que quedó sin rival',
+    example: [5, 9, 2],
+    description:
+      'MANUAL: números que pasan por bye a la segunda ronda (los que faltan para completar el cuadro a potencia de 2)',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  bye?: number | null;
+  @IsArray()
+  @ArrayMaxSize(256)
+  @IsInt({ each: true })
+  byes?: number[];
 }
 
 export class UpdateRoundDto {

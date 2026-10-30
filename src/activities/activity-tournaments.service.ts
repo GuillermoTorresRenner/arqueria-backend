@@ -245,7 +245,6 @@ export class ActivityTournamentsService {
               arrowsPerArcher: true,
               targetsToWin: true,
               shootOffArrows: true,
-              playoffArrows: true,
               scoringFormat: { select: { isActive: true } },
             },
           },
@@ -707,9 +706,7 @@ export class ActivityTournamentsService {
           (c.mode === CategoryMode.SCORE &&
             (c.scoringFormatId || null) !== existing.scoringFormatId) ||
           (c.shootOffArrows !== undefined &&
-            c.shootOffArrows !== existing.shootOffArrows) ||
-          (c.playoffArrows !== undefined &&
-            c.playoffArrows !== existing.playoffArrows);
+            c.shootOffArrows !== existing.shootOffArrows);
         if (fixed) {
           throw new ConflictException(
             `«${existing.name}» ya tiene cuadro: su diana y sus desempates no se pueden cambiar`,
@@ -762,7 +759,6 @@ export class ActivityTournamentsService {
       arrowsPerArcher: c.arrowsPerArcher,
       targetsToWin: c.targetsToWin,
       shootOffArrows: c.shootOffArrows,
-      playoffArrows: c.playoffArrows,
       judgeId: c.judgeId || null,
     });
     try {

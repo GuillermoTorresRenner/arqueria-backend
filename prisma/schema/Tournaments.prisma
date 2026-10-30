@@ -105,8 +105,6 @@ model TournamentCategory {
   targetsToWin    Int          @default(3)
   /// Flechas por arquero en cada tanda de desempate (muerte súbita)
   shootOffArrows  Int          @default(1)
-  /// Flechas por arquero en la minironda entre perdedores empatados
-  playoffArrows   Int          @default(1)
   /// Juez de la categoría: cuenta y valida en la diana
   judgeId         String?
   createdAt       DateTime     @default(now())

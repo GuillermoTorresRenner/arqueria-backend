@@ -1,6 +1,7 @@
 /// Cuadro de eliminación directa de cada categoría. Solo la primera ronda se
-/// sortea; las siguientes se arman con los ganadores. Una ronda impar deja a
-/// un arquero sin rival (por sorteo) que se enfrenta al mejor perdedor.
+/// sortea; las siguientes se arman con los ganadores. Si los inscritos no son
+/// potencia de 2, el sorteo deja pasar por bye a los que faltan para completar
+/// el cuadro, directo a la segunda ronda.
 
 /// Ronda del cuadro de una categoría (1 = primera)
 model BracketRound {
@@ -11,11 +12,11 @@ model BracketRound {
   arrowsPerArcher Int?
   /// KNOCKDOWN: dianas para ganar en esta ronda; null = las de la categoría
   targetsToWin    Int?
-  /// Arqueros de la ronda en orden de cuadro (TournamentParticipant.id): los
-  /// pares se forman de a dos y el que queda sin rival va al final
+  /// Arqueros de la ronda en orden de cuadro (TournamentParticipant.id): cada
+  /// bye ocupa un lugar y cada enfrentamiento, dos seguidos
   entrants        Json      @default("[]")
-  /// Ronda impar: quien quedó sin rival (por sorteo) y espera al mejor perdedor
-  byeId           String?
+  /// Primera ronda: quienes pasan directo a la segunda (sistema bye)
+  byeIds          String[]  @default([])
   /// Auditoría: el juez o un admin revisó los resultados y cerró la ronda.
   /// Recién entonces se arma la siguiente.
   closedAt        DateTime?
@@ -46,7 +47,7 @@ model Draw {
   /// ALGORITHM: semilla del PRNG, para recalcular el mismo resultado
   seed      String?
   /// Foto del resultado por número de participante:
-  /// { "pairs": [[3, 7], [1, 12]], "bye": 5 }
+  /// { "pairs": [[3, 7], [1, 12]], "byes": [5] }
   result    Json
   drawnById String?
   createdAt DateTime   @default(now())
@@ -60,8 +61,6 @@ model Draw {
 
 enum MatchKind {
   REGULAR /// enfrentamiento del cuadro
-  REPECHAGE /// el que quedó sin rival contra el mejor perdedor de la ronda
-  PLAYOFF /// minironda entre perdedores empatados por el mejor puntaje
   THIRD_PLACE /// perdedores de semifinales
   FINAL
 }
@@ -72,7 +71,7 @@ enum MatchStatus {
   FINISHED
 }
 
-/// Enfrentamiento. Normalmente 2 arqueros; una minironda puede tener más.
+/// Enfrentamiento entre 2 arqueros
 model Match {
   id         String      @id @default(cuid())
   roundId    String
@@ -99,7 +98,7 @@ model MatchEntry {
   id            String   @id @default(cuid())
   matchId       String
   participantId String
-  /// 1 o 2 (o más en una minironda): lado en el fixture
+  /// 1 o 2: lado en el fixture
   slot          Int
   createdAt     DateTime @default(now())
 

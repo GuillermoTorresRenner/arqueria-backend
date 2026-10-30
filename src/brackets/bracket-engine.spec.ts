@@ -1,12 +1,15 @@
 import {
   advancing,
+  bracketOrder,
+  bracketSize,
   buildRoundMatches,
+  byeCount,
   drawFromShuffle,
   evaluateMatch,
   isRoundComplete,
   MatchRules,
-  planDerived,
   podium,
+  roundLabel,
   RoundMatch,
   semifinalLosers,
   Shot,
@@ -95,26 +98,6 @@ describe('evaluateMatch · Puntaje', () => {
       winnerEntryId: 'b',
     });
   });
-
-  it('minironda de tres: el desempate sigue solo entre los que empatan arriba', () => {
-    const rules = { ...SCORE, kind: 'PLAYOFF' as const, arrows: 1 };
-    const shots = [
-      ...arrows('a', [2]),
-      ...arrows('b', [2]),
-      ...arrows('c', [1]),
-    ];
-    expect(evaluateMatch(['a', 'b', 'c'], shots, rules).shootOff).toEqual({
-      tanda: 1,
-      entryIds: ['a', 'b'],
-    });
-    shots.push(
-      ...arrows('a', [0], 'SHOOT_OFF'),
-      ...arrows('b', [1], 'SHOOT_OFF'),
-    );
-    expect(evaluateMatch(['a', 'b', 'c'], shots, rules).winnerEntryId).toBe(
-      'b',
-    );
-  });
 });
 
 describe('evaluateMatch · Duelos', () => {
@@ -160,156 +143,129 @@ describe('evaluateMatch · Duelos', () => {
   });
 });
 
-describe('ronda impar', () => {
-  const match = (
-    order: number,
-    a: string,
-    b: string,
-    winner: string | null,
-    scores: [number, number],
-  ): RoundMatch => ({
-    kind: 'REGULAR',
+describe('sistema bye', () => {
+  const match = (order: number, a: string, b: string, winner: string) => ({
+    kind: 'REGULAR' as const,
     order,
     participantIds: [a, b],
     winnerId: winner,
-    scores: { [a]: scores[0], [b]: scores[1] },
-    hasShots: true,
   });
 
-  it('espera a que terminen los enfrentamientos del cuadro', () => {
+  it('completa el cuadro a la potencia de 2 siguiente', () => {
+    expect([2, 3, 4, 5, 8, 9, 13, 16].map(bracketSize)).toEqual([
+      2, 4, 4, 8, 8, 16, 16, 16,
+    ]);
+    expect([2, 3, 4, 5, 8, 9, 13, 16].map(byeCount)).toEqual([
+      0, 1, 0, 3, 0, 7, 3, 0,
+    ]);
+  });
+
+  it('intercala byes y enfrentamientos en el orden de cuadro', () => {
+    // 6 arqueros: 2 byes y 2 enfrentamientos
     expect(
-      planDerived('z', [
-        match(0, 'a', 'b', 'a', [5, 3]),
-        match(1, 'c', 'd', null, [0, 0]),
-      ]),
-    ).toEqual({
-      playoff: null,
-      repechage: null,
-    });
+      bracketOrder(
+        [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+        ['x', 'y'],
+      ),
+    ).toEqual(['x', 'a', 'b', 'y', 'c', 'd']);
+    // 5 arqueros: sobran byes y se cruzan entre sí en la segunda ronda
+    expect(bracketOrder([['a', 'b']], ['x', 'y', 'z'])).toEqual([
+      'x',
+      'a',
+      'b',
+      'y',
+      'z',
+    ]);
   });
 
-  it('el mejor perdedor va al repechaje contra el que quedó sin rival', () => {
-    const matches = [
-      match(0, 'a', 'b', 'a', [5, 3]),
-      match(1, 'c', 'd', 'c', [6, 4]),
-    ];
-    expect(planDerived('z', matches)).toEqual({
-      playoff: null,
-      repechage: ['z', 'd'],
-    });
+  it('los byes no juegan y el resto se cruza de a dos en orden', () => {
+    const entrants = ['x', 'a', 'b', 'y', 'c', 'd'];
+    expect(
+      buildRoundMatches(entrants, ['x', 'y']).map((m) => m.participantIds),
+    ).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    expect(() => buildRoundMatches(entrants, ['x'])).toThrow(/2 por bye/);
+    expect(() => buildRoundMatches(['a', 'b', 'c'], [])).toThrow(/bye/);
   });
 
-  it('perdedores empatados juegan una minironda; su ganador va al repechaje', () => {
-    const matches = [
-      match(0, 'a', 'b', 'a', [5, 4]),
-      match(1, 'c', 'd', 'c', [6, 4]),
-    ];
-    expect(planDerived('z', matches)).toEqual({
-      playoff: ['b', 'd'],
-      repechage: null,
-    });
-    matches.push({
-      kind: 'PLAYOFF',
-      order: 0,
-      participantIds: ['b', 'd'],
-      winnerId: 'd',
-      scores: {},
-      hasShots: true,
-    });
-    expect(planDerived('z', matches)).toEqual({
-      playoff: ['b', 'd'],
-      repechage: ['z', 'd'],
-    });
+  it('pasan byes y ganadores conservando su lugar en el cuadro', () => {
+    const entrants = ['x', 'a', 'b', 'y', 'c', 'd'];
+    const matches = [match(1, 'c', 'd', 'd'), match(0, 'a', 'b', 'a')];
+    expect(isRoundComplete(matches)).toBe(true);
+    const next = advancing(entrants, ['x', 'y'], matches);
+    expect(next).toEqual(['x', 'a', 'y', 'd']);
+    // Cada bye espera al ganador de un enfrentamiento
+    expect(buildRoundMatches(next, []).map((m) => m.participantIds)).toEqual([
+      ['x', 'a'],
+      ['y', 'd'],
+    ]);
   });
 
-  it('pasan los ganadores en orden y el del repechaje ocupa el lugar del sin rival', () => {
-    const matches: RoundMatch[] = [
-      match(1, 'c', 'd', 'd', [1, 2]),
-      match(0, 'a', 'b', 'a', [2, 1]),
-      {
-        kind: 'REPECHAGE',
-        order: 0,
-        participantIds: ['z', 'c'],
-        winnerId: 'c',
-        scores: {},
-        hasShots: true,
-      },
-    ];
-    expect(isRoundComplete('z', matches)).toBe(true);
-    expect(advancing('z', matches)).toEqual(['a', 'd', 'c']);
+  it('una ronda con enfrentamientos sin terminar no está completa', () => {
+    expect(isRoundComplete([])).toBe(false);
+    expect(
+      isRoundComplete([{ ...match(0, 'a', 'b', 'a'), winnerId: null }]),
+    ).toBe(false);
+  });
+
+  it('nombra la ronda por el tamaño del cuadro', () => {
+    expect(roundLabel(13, 1)).toBe('Octavos de final');
+    expect(roundLabel(5, 1)).toBe('Cuartos de final');
+    expect(roundLabel(3, 1)).toBe('Semifinal');
   });
 });
 
 describe('armado de rondas', () => {
   it('con 2 es final; si vienen de semifinal, también 3.er lugar', () => {
-    expect(buildRoundMatches(['a', 'b'], null).map((m) => m.kind)).toEqual([
+    expect(buildRoundMatches(['a', 'b'], []).map((m) => m.kind)).toEqual([
       'FINAL',
     ]);
-    expect(buildRoundMatches(['a', 'b'], null, ['c', 'd'])).toEqual([
+    expect(buildRoundMatches(['a', 'b'], [], ['c', 'd'])).toEqual([
       { kind: 'FINAL', order: 0, participantIds: ['a', 'b'] },
       { kind: 'THIRD_PLACE', order: 0, participantIds: ['c', 'd'] },
     ]);
   });
 
-  it('impar: el sin rival espera y el resto se cruza de a dos en orden', () => {
-    expect(
-      buildRoundMatches(['a', 'b', 'c', 'd', 'e'], 'c').map(
-        (m) => m.participantIds,
-      ),
-    ).toEqual([
-      ['a', 'b'],
-      ['d', 'e'],
-    ]);
-    expect(() => buildRoundMatches(['a', 'b', 'c'], null)).toThrow(/sortear/);
-  });
-
-  it('solo una ronda de 4 sin sin rival da perdedores de semifinal', () => {
+  it('solo una ronda de 4 sin byes da perdedores de semifinal', () => {
     const m = (order: number, a: string, b: string, w: string): RoundMatch => ({
       kind: 'REGULAR',
       order,
       participantIds: [a, b],
       winnerId: w,
-      scores: {},
-      hasShots: true,
     });
     expect(
-      semifinalLosers(4, null, [m(0, 'a', 'b', 'a'), m(1, 'c', 'd', 'd')]),
+      semifinalLosers(4, [], [m(0, 'a', 'b', 'a'), m(1, 'c', 'd', 'd')]),
     ).toEqual(['b', 'c']);
-    expect(semifinalLosers(3, 'z', [m(0, 'a', 'b', 'a')])).toBeNull();
+    expect(semifinalLosers(3, ['z'], [m(0, 'a', 'b', 'a')])).toBeNull();
   });
 });
 
 describe('sorteo', () => {
-  it('valida que cada número aparezca una vez y el sin rival según la paridad', () => {
-    const numbers = [1, 2, 3, 4, 5];
-    expect(
-      validateDraw(numbers, {
-        pairs: [
-          [1, 4],
-          [2, 5],
-        ],
-        bye: 3,
-      }),
-    ).toBeNull();
-    expect(
-      validateDraw(numbers, {
-        pairs: [
-          [1, 4],
-          [2, 5],
-        ],
-        bye: null,
-      }),
-    ).toMatch(/sin rival/);
+  it('valida que cada número aparezca una vez y los byes que completan el cuadro', () => {
+    const numbers = [1, 2, 3, 4, 5, 6];
+    const pairs: [number, number][] = [
+      [1, 4],
+      [2, 5],
+    ];
+    expect(validateDraw(numbers, { pairs, byes: [3, 6] })).toBeNull();
+    expect(validateDraw(numbers, { pairs, byes: [3] })).toMatch(
+      /cuadro es de 8: pasan 2 por bye/,
+    );
     expect(
       validateDraw(numbers, {
         pairs: [
           [1, 4],
           [1, 5],
         ],
-        bye: 3,
+        byes: [3, 6],
       }),
     ).toMatch(/más de una vez/);
-    expect(validateDraw(numbers, { pairs: [[1, 4]], bye: 3 })).toMatch(
+    expect(validateDraw(numbers, { pairs: [[1, 4]], byes: [3, 6] })).toMatch(
       /Falta ubicar: n.º 2, n.º 5/,
     );
     expect(
@@ -318,30 +274,30 @@ describe('sorteo', () => {
           [1, 9],
           [2, 5],
         ],
-        bye: 3,
+        byes: [3, 6],
       }),
     ).toMatch(/n.º 9 no está/);
-    expect(validateDraw([1, 2], { pairs: [[1, 2]], bye: 3 })).toMatch(
+    expect(validateDraw([1, 2], { pairs: [[1, 2]], byes: [3] })).toMatch(
       /n.º 3 no está/,
     );
+    expect(
+      validateDraw([1, 2, 3, 4], { pairs: [[1, 2]], byes: [3, 4] }),
+    ).toMatch(/nadie pasa por bye/);
   });
 
-  it('el algoritmo empareja de a dos y deja al último sin rival', () => {
+  it('el algoritmo da los byes a los primeros y empareja al resto', () => {
     expect(drawFromShuffle([4, 1, 3, 2, 5])).toEqual({
-      pairs: [
-        [4, 1],
-        [3, 2],
-      ],
-      bye: 5,
+      pairs: [[2, 5]],
+      byes: [4, 1, 3],
     });
-    expect(drawFromShuffle([2, 1])).toEqual({ pairs: [[2, 1]], bye: null });
+    expect(drawFromShuffle([2, 1])).toEqual({ pairs: [[2, 1]], byes: [] });
   });
 });
 
 /**
  * Simula torneos completos con resultados al azar: el cuadro siempre termina,
- * con un campeón y un podio de arqueros distintos, y nadie juega después de
- * quedar eliminado.
+ * con un campeón y un podio de arqueros distintos, nadie juega después de
+ * quedar eliminado y, tras la primera ronda, todas son potencia de 2.
  */
 describe('simulación de torneos completos', () => {
   let seed = 7;
@@ -350,73 +306,71 @@ describe('simulación de torneos completos', () => {
     kind: RoundMatch['kind'],
     order: number,
     ids: string[],
-  ): RoundMatch => {
-    const winner = ids[Math.floor(random() * ids.length)];
-    // Puntajes chicos: provocan empates entre perdedores y minirondas
-    const scores = Object.fromEntries(
-      ids.map((id) => [id, Math.floor(random() * 3)]),
-    );
-    return {
-      kind,
-      order,
-      participantIds: ids,
-      winnerId: winner,
-      scores,
-      hasShots: true,
-    };
+  ): RoundMatch => ({
+    kind,
+    order,
+    participantIds: ids,
+    winnerId: ids[Math.floor(random() * ids.length)],
+  });
+  const shuffle = <T>(items: T[]) => {
+    const result = [...items];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
   };
 
-  for (let n = 2; n <= 16; n++) {
+  for (let n = 2; n <= 33; n++) {
     it(`${n} arqueros`, () => {
-      const ids = Array.from({ length: n }, (_, i) => `p${i + 1}`);
+      const numbers = Array.from({ length: n }, (_, i) => i + 1);
+      const draw = drawFromShuffle(shuffle(numbers));
+      expect(validateDraw(numbers, draw)).toBeNull();
+      const id = (k: number) => `p${k}`;
+      let byes = draw.byes.map(id);
+      let entrants = bracketOrder(
+        draw.pairs.map(([a, b]) => [id(a), id(b)] as [string, string]),
+        byes,
+      );
       const eliminated = new Set<string>();
-      let entrants = ids;
       let previous: {
         matches: RoundMatch[];
         count: number;
-        bye: string | null;
+        byes: string[];
       } | null = null;
-      let rounds: RoundMatch[][] = [];
+      const rounds: RoundMatch[][] = [];
 
       for (let guard = 0; guard < 20; guard++) {
-        const bye =
-          entrants.length % 2 === 1 && entrants.length > 2
-            ? entrants[entrants.length - 1]
-            : null;
+        if (rounds.length) expect(byeCount(entrants.length)).toBe(0);
         const losers = previous
-          ? semifinalLosers(previous.count, previous.bye, previous.matches)
+          ? semifinalLosers(previous.count, previous.byes, previous.matches)
           : null;
-        const built = buildRoundMatches(entrants, bye, losers);
-        const matches = built.map((m) =>
+        const matches = buildRoundMatches(entrants, byes, losers).map((m) =>
           play(m.kind, m.order, m.participantIds),
         );
-        let plan = planDerived(bye, matches);
-        if (plan.playoff) {
-          matches.push(play('PLAYOFF', 0, plan.playoff));
-          plan = planDerived(bye, matches);
-        }
-        if (plan.repechage)
-          matches.push(play('REPECHAGE', 0, [...plan.repechage]));
-        expect(isRoundComplete(bye, matches)).toBe(true);
+        expect(isRoundComplete(matches)).toBe(true);
         for (const m of matches) {
-          for (const id of m.participantIds)
-            expect(eliminated.has(id)).toBe(false);
+          for (const p of m.participantIds)
+            expect(eliminated.has(p)).toBe(false);
         }
         rounds.push(matches);
         if (matches.some((m) => m.kind === 'FINAL')) break;
 
-        const next = advancing(bye, matches);
-        for (const id of entrants) if (!next.includes(id)) eliminated.add(id);
+        const next = advancing(entrants, byes, matches);
+        for (const p of entrants) if (!next.includes(p)) eliminated.add(p);
         // Los perdedores de semifinal siguen vivos para el 3.er lugar
-        const sf = semifinalLosers(entrants.length, bye, matches);
-        sf?.forEach((id) => eliminated.delete(id));
-        previous = { matches, count: entrants.length, bye };
+        const sf = semifinalLosers(entrants.length, byes, matches);
+        sf?.forEach((p) => eliminated.delete(p));
+        previous = { matches, count: entrants.length, byes };
         entrants = next;
+        byes = [];
       }
 
-      const final = rounds[rounds.length - 1];
+      // Ningún bye juega la primera ronda
+      for (const b of draw.byes.map(id))
+        expect(rounds[0].some((m) => m.participantIds.includes(b))).toBe(false);
       const result = podium(
-        final,
+        rounds[rounds.length - 1],
         rounds.length > 1 ? rounds[rounds.length - 2] : null,
       );
       expect(result.first).toBeTruthy();
@@ -426,7 +380,6 @@ describe('simulación de torneos completos', () => {
         Boolean,
       );
       expect(new Set(placed).size).toBe(placed.length);
-      rounds = [];
     });
   }
 });

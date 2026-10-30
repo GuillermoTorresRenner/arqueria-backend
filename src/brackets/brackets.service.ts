@@ -19,16 +19,15 @@ import { ScoringGateway } from '../scoring/scoring.gateway';
 import { newSeed, seededShuffle } from '../tournaments/seeded-random';
 import {
   advancing,
+  bracketOrder,
   buildRoundMatches,
   DrawResult,
   drawFromShuffle,
   evaluateMatch,
   isRace,
   isRoundComplete,
-  loserScore,
   MatchEvaluation,
   MatchRules,
-  planDerived,
   podium,
   roundLabel,
   RoundMatch,
@@ -103,25 +102,17 @@ const fullName = (p: {
   member: { user: { name: string | null; surname: string | null } };
 }) => [p.member.user.name, p.member.user.surname].filter(Boolean).join(' ');
 
-/// Qué enfrentamientos dependen del resultado de otro dentro de la ronda
-const DEPENDENTS: Partial<Record<MatchKind, MatchKind[]>> = {
-  REGULAR: [MatchKind.PLAYOFF, MatchKind.REPECHAGE],
-  PLAYOFF: [MatchKind.REPECHAGE],
-};
-
-/// Con artículo, para los mensajes («en la minironda»)
+/// Con artículo, para los mensajes («en la final»)
 const KIND_LABEL: Record<MatchKind, string> = {
   REGULAR: 'el enfrentamiento',
-  REPECHAGE: 'el repechaje',
-  PLAYOFF: 'la minironda',
   THIRD_PLACE: 'el duelo por el 3.er lugar',
   FINAL: 'la final',
 };
 
 /**
  * Cuadro de eliminación directa de cada categoría: sorteo de la primera ronda,
- * carga de flechas y disparos, enfrentamientos extra de las rondas impares,
- * cierre (auditoría) de cada ronda y armado de la siguiente.
+ * byes para completar el cuadro, carga de flechas y disparos, cierre
+ * (auditoría) de cada ronda y armado de la siguiente.
  */
 @Injectable()
 export class BracketsService {
@@ -234,26 +225,17 @@ export class BracketsService {
   // ---------- Sorteo ----------
 
   /**
-   * Sorteo de la categoría: el de la primera ronda (todos los pares) o, en
-   * una ronda impar posterior, quién queda sin rival. Por algoritmo con una
-   * semilla registrada o como lo dictó la tómbola.
+   * Sorteo de la primera ronda: los pares y, si los inscritos no son potencia
+   * de 2, quiénes pasan por bye. Por algoritmo con una semilla registrada o
+   * como lo dictó la tómbola. Las rondas siguientes no se sortean.
    */
   async draw(categoryId: string, dto: DrawDto, user: Staff) {
     const category = await this.loadCategory(categoryId);
-    const last = category.rounds[category.rounds.length - 1];
-    if (!last) return this.drawFirstRound(category, dto, user);
-    if (last.matches.length === 0)
-      return this.drawBye(category, last, dto, user);
-    throw new ConflictException(
-      `Los enfrentamientos de «${category.name}» ya se sortearon`,
-    );
-  }
-
-  private async drawFirstRound(
-    category: CategoryFull,
-    dto: DrawDto,
-    user: Staff,
-  ) {
+    if (category.rounds.length) {
+      throw new ConflictException(
+        `Los enfrentamientos de «${category.name}» ya se sortearon`,
+      );
+    }
     const registrations = await this.prisma.registration.findMany({
       where: { categoryId: category.id, status: RegistrationStatus.CONFIRMED },
       select: { participant: { select: { id: true, number: true } } },
@@ -275,25 +257,31 @@ export class BracketsService {
 
     const seed =
       dto.method === 'ALGORITHM' ? dto.seed?.trim() || newSeed() : null;
-    if (!seed && !(dto.pairs ?? []).flat().every(Number.isInteger)) {
+    if (
+      !seed &&
+      ![...(dto.pairs ?? []).flat(), ...(dto.byes ?? [])].every(
+        Number.isInteger,
+      )
+    ) {
       throw new BadRequestException(
-        'Los pares deben ser números de participante',
+        'Los pares y los byes deben ser números de participante',
       );
     }
     const result: DrawResult = seed
       ? drawFromShuffle(seededShuffle(numbers, seed))
       : {
           pairs: (dto.pairs ?? []) as [number, number][],
-          bye: dto.bye ?? null,
+          byes: dto.byes ?? [],
         };
     const invalid = validateDraw(numbers, result);
     if (invalid) throw new BadRequestException(invalid);
 
-    const entrants = [
-      ...result.pairs.flat().map((n) => byNumber.get(n)!),
-      ...(result.bye !== null ? [byNumber.get(result.bye)!] : []),
-    ];
-    const byeId = result.bye !== null ? byNumber.get(result.bye)! : null;
+    const id = (n: number) => byNumber.get(n)!;
+    const entrants = bracketOrder(
+      result.pairs.map(([a, b]) => [id(a), id(b)] as [string, string]),
+      result.byes.map(id),
+    );
+    const byeIds = result.byes.map(id);
 
     await this.prisma.$transaction(async (tx) => {
       const round = await tx.bracketRound.create({
@@ -301,7 +289,7 @@ export class BracketsService {
           categoryId: category.id,
           number: 1,
           entrants,
-          byeId,
+          byeIds,
           ...this.roundRules(category),
         },
       });
@@ -317,7 +305,7 @@ export class BracketsService {
       await this.createMatches(
         tx,
         round.id,
-        buildRoundMatches(entrants, byeId),
+        buildRoundMatches(entrants, byeIds),
       );
       // Con el primer sorteo el torneo está en curso y su fixture es público
       if (
@@ -345,91 +333,17 @@ export class BracketsService {
     return { seed, ...result };
   }
 
-  private async drawBye(
-    category: CategoryFull,
-    round: RoundFull,
-    dto: DrawDto,
-    user: Staff,
-  ) {
-    const entrants = round.entrants as string[];
-    const participants = await this.participants(entrants);
-    const numbers = entrants.map((id) => participants.get(id)!.number);
-    const seed =
-      dto.method === 'ALGORITHM' ? dto.seed?.trim() || newSeed() : null;
-    const bye = seed ? seededShuffle(numbers, seed)[0] : dto.bye;
-    const byeId = entrants.find((id) => participants.get(id)!.number === bye);
-    if (!byeId) {
-      throw new BadRequestException(
-        bye === undefined || bye === null
-          ? 'Indica qué número quedó sin rival'
-          : `El n.º ${bye} no juega esta ronda`,
-      );
-    }
-    const matches = buildRoundMatches(entrants, byeId);
-    const result: DrawResult = {
-      pairs: matches.map(
-        (m) =>
-          m.participantIds.map((id) => participants.get(id)!.number) as [
-            number,
-            number,
-          ],
-      ),
-      bye: bye!,
-    };
-    await this.prisma.$transaction(async (tx) => {
-      await tx.bracketRound.update({
-        where: { id: round.id },
-        data: { byeId },
-      });
-      await tx.draw.create({
-        data: {
-          roundId: round.id,
-          method: dto.method,
-          seed,
-          result: result as unknown as Prisma.InputJsonValue,
-          drawnById: user.userID,
-        },
-      });
-      await this.createMatches(tx, round.id, matches);
-    });
-    await this.audit(
-      user,
-      'BRACKET_BYE_DRAW',
-      round.id,
-      `Sin rival en la ronda ${round.number} de «${category.name}»`,
-      {
-        method: dto.method,
-        seed,
-        bye,
-      },
-    );
-    this.changed(category.tournament.id, category.id);
-    return { seed, ...result };
-  }
-
-  /// Deshace el último sorteo mientras su ronda no tenga resultados
+  /// Deshace el sorteo mientras la primera ronda no tenga resultados
   async undoDraw(categoryId: string, user: Staff) {
     const category = await this.loadCategory(categoryId);
     const last = category.rounds[category.rounds.length - 1];
-    if (!last || (last.number > 1 && last.matches.length === 0)) {
-      throw new BadRequestException('No hay un sorteo que deshacer');
-    }
-    if (last.matches.some((m) => m.shots.length > 0)) {
+    if (!last) throw new BadRequestException('No hay un sorteo que deshacer');
+    if (last.number > 1 || last.matches.some((m) => m.shots.length > 0)) {
       throw new ConflictException(
-        'La ronda ya tiene resultados: no se puede deshacer el sorteo',
+        'La primera ronda ya tiene resultados: no se puede deshacer el sorteo',
       );
     }
-    if (last.number === 1) {
-      await this.prisma.bracketRound.delete({ where: { id: last.id } });
-    } else {
-      await this.prisma.$transaction([
-        this.prisma.match.deleteMany({ where: { roundId: last.id } }),
-        this.prisma.bracketRound.update({
-          where: { id: last.id },
-          data: { byeId: null },
-        }),
-      ]);
-    }
+    await this.prisma.bracketRound.delete({ where: { id: last.id } });
     await this.audit(
       user,
       'BRACKET_UNDO_DRAW',
@@ -491,7 +405,7 @@ export class BracketsService {
     }
     if (round.closedAt) throw new ConflictException('La ronda ya está cerrada');
     const matches = this.roundMatches(category, round);
-    if (!isRoundComplete(round.byeId, matches)) {
+    if (!isRoundComplete(matches)) {
       throw new BadRequestException(
         'Faltan enfrentamientos por terminar en esta ronda',
       );
@@ -504,10 +418,14 @@ export class BracketsService {
         data: { closedAt: new Date(), closedById: user.userID },
       });
       if (!isFinal) {
-        const entrants = advancing(round.byeId, matches);
+        const entrants = advancing(
+          round.entrants as string[],
+          round.byeIds,
+          matches,
+        );
         const losers = semifinalLosers(
           (round.entrants as string[]).length,
-          round.byeId,
+          round.byeIds,
           matches,
         );
         const next = await tx.bracketRound.create({
@@ -518,14 +436,11 @@ export class BracketsService {
             ...this.roundRules(category),
           },
         });
-        // Una ronda impar espera el sorteo de quién queda sin rival
-        if (entrants.length % 2 === 0) {
-          await this.createMatches(
-            tx,
-            next.id,
-            buildRoundMatches(entrants, null, losers),
-          );
-        }
+        await this.createMatches(
+          tx,
+          next.id,
+          buildRoundMatches(entrants, [], losers),
+        );
       } else {
         await this.finishTournamentIfDone(tx, category.tournament.id);
       }
@@ -578,12 +493,12 @@ export class BracketsService {
 
   /**
    * Graba flechas (Puntaje) o un disparo de cada arquero (Duelos). Se puede
-   * corregir lo ya cargado mientras la ronda no esté cerrada; el ganador y
-   * los enfrentamientos extra se recalculan.
+   * corregir lo ya cargado mientras la ronda no esté cerrada; el ganador se
+   * recalcula.
    */
   async recordShots(matchId: string, dto: RecordShotsDto, user: Staff) {
     const { category, round, match } = await this.loadMatch(matchId);
-    this.assertCanWrite(user, category, round, match);
+    this.assertCanWrite(user, category, round);
     const rules = this.rules(category, round, match.kind);
     const race = isRace(rules);
     const entryIds = new Set(match.entries.map((e) => e.id));
@@ -763,7 +678,7 @@ export class BracketsService {
   /// Borra una flecha (Puntaje) o un disparo completo (Duelos)
   async deleteShot(matchId: string, dto: DeleteShotDto, user: Staff) {
     const { category, round, match } = await this.loadMatch(matchId);
-    this.assertCanWrite(user, category, round, match);
+    this.assertCanWrite(user, category, round);
     const race = isRace(this.rules(category, round, match.kind));
     if (!race && !dto.entryId) {
       throw new BadRequestException('Indica de qué arquero es la flecha');
@@ -792,7 +707,7 @@ export class BracketsService {
 
   // ---------- Internos ----------
 
-  /// Recalcula el enfrentamiento y los extra de su ronda, y avisa al fixture
+  /// Recalcula el enfrentamiento y avisa al fixture
   private async afterChange(
     category: CategoryFull,
     roundId: string,
@@ -802,7 +717,6 @@ export class BracketsService {
     const fresh = await this.loadCategory(category.id);
     const round = fresh.rounds.find((r) => r.id === roundId)!;
     await this.syncMatchStatus(fresh, round);
-    await this.syncDerived(round.id);
     this.changed(fresh.tournament.id, fresh.id);
     return this.matchDetail(matchId, user);
   }
@@ -833,42 +747,6 @@ export class BracketsService {
       });
     });
     await this.prisma.$transaction(updates);
-  }
-
-  /**
-   * Minironda y repechaje de una ronda impar: se crean cuando ya se sabe
-   * quiénes los juegan y se rehacen si una corrección lo cambia (los que se
-   * rehacen nunca tienen resultados: assertCanWrite lo impide).
-   */
-  private async syncDerived(roundId: string) {
-    const category = await this.loadCategory(
-      (
-        await this.prisma.bracketRound.findUniqueOrThrow({
-          where: { id: roundId },
-        })
-      ).categoryId,
-    );
-    const round = category.rounds.find((r) => r.id === roundId)!;
-    const plan = planDerived(round.byeId, this.roundMatches(category, round));
-    const want: { kind: MatchKind; ids: string[] | null }[] = [
-      { kind: MatchKind.PLAYOFF, ids: plan.playoff },
-      { kind: MatchKind.REPECHAGE, ids: plan.repechage },
-    ];
-    for (const { kind, ids } of want) {
-      const current = round.matches.find((m) => m.kind === kind);
-      const same =
-        current &&
-        ids &&
-        current.entries.length === ids.length &&
-        current.entries.every((e, i) => e.participantId === ids[i]);
-      if (same || (!current && !ids)) continue;
-      if (current)
-        await this.prisma.match.delete({ where: { id: current.id } });
-      if (ids)
-        await this.createMatches(this.prisma, round.id, [
-          { kind, order: 0, participantIds: ids },
-        ]);
-    }
   }
 
   private async createMatches(
@@ -924,7 +802,6 @@ export class BracketsService {
     user: Staff,
     category: CategoryFull,
     round: RoundFull,
-    match: MatchFull,
   ) {
     if (!this.canScore(user, category)) {
       throw new ForbiddenException('No eres juez de esta categoría');
@@ -932,14 +809,6 @@ export class BracketsService {
     if (round.closedAt) {
       throw new ConflictException(
         'La ronda está cerrada: un admin debe reabrirla para corregir',
-      );
-    }
-    const blocking = round.matches.find(
-      (m) => DEPENDENTS[match.kind]?.includes(m.kind) && m.shots.length > 0,
-    );
-    if (blocking) {
-      throw new ConflictException(
-        `Ya hay resultados en ${KIND_LABEL[blocking.kind]}: bórralos antes de corregir este enfrentamiento`,
       );
     }
   }
@@ -972,10 +841,7 @@ export class BracketsService {
     return {
       mode: category.mode,
       kind,
-      arrows:
-        kind === MatchKind.PLAYOFF
-          ? category.playoffArrows
-          : (round.arrowsPerArcher ?? category.arrowsPerArcher),
+      arrows: round.arrowsPerArcher ?? category.arrowsPerArcher,
       targetsToWin: round.targetsToWin ?? category.targetsToWin,
       shootOffArrows: category.shootOffArrows,
     };
@@ -1016,19 +882,12 @@ export class BracketsService {
         winnerId: evaluation.winnerEntryId
           ? byEntry.get(evaluation.winnerEntryId)!
           : null,
-        scores: Object.fromEntries(
-          match.entries.map((e) => [
-            e.participantId,
-            loserScore(evaluation, e.id, category.mode),
-          ]),
-        ),
-        hasShots: match.shots.length > 0,
       };
     });
   }
 
-  /// people: todos los participantes del torneo (también el sin rival, que
-  /// aún no está en ningún enfrentamiento)
+  /// people: todos los participantes del torneo (también los que pasaron por
+  /// bye, que no están en ningún enfrentamiento de su ronda)
   private categoryView(
     category: CategoryFull,
     staff: boolean,
@@ -1045,17 +904,17 @@ export class BracketsService {
         number: round.number,
         label: roundLabel(entrants.length, round.number),
         entrantsCount: entrants.length,
-        /// En orden de cuadro; en una ronda impar en espera, entre quiénes se sortea
+        /// En orden de cuadro
         entrants: entrants.map(show).filter(Boolean),
-        byeId: round.byeId,
-        bye: show(round.byeId),
+        byeIds: round.byeIds,
+        /// Pasan directo a la ronda siguiente, en orden de cuadro
+        byes: entrants
+          .filter((id) => round.byeIds.includes(id))
+          .map(show)
+          .filter(Boolean),
         arrowsPerArcher: round.arrowsPerArcher ?? category.arrowsPerArcher,
         targetsToWin: round.targetsToWin ?? category.targetsToWin,
-        awaitingDraw: round.matches.length === 0,
-        complete: isRoundComplete(
-          round.byeId,
-          this.roundMatches(category, round),
-        ),
+        complete: isRoundComplete(this.roundMatches(category, round)),
         closedAt: round.closedAt,
         ...(staff && {
           closedBy: round.closedBy,
@@ -1108,7 +967,6 @@ export class BracketsService {
       arrowsPerArcher: category.arrowsPerArcher,
       targetsToWin: category.targetsToWin,
       shootOffArrows: category.shootOffArrows,
-      playoffArrows: category.playoffArrows,
       judge: category.judge,
       status: !category.rounds.length
         ? 'NOT_DRAWN'
@@ -1163,14 +1021,6 @@ export class BracketsService {
   private async tournamentPeople(tournamentId: string) {
     const rows = await this.prisma.tournamentParticipant.findMany({
       where: { tournamentId },
-      ...PARTICIPANT,
-    });
-    return new Map(rows.map((r) => [r.id, r]));
-  }
-
-  private async participants(ids: string[]) {
-    const rows = await this.prisma.tournamentParticipant.findMany({
-      where: { id: { in: ids } },
       ...PARTICIPANT,
     });
     return new Map(rows.map((r) => [r.id, r]));

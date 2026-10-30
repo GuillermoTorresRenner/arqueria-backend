@@ -123,18 +123,6 @@ export class TournamentCategoryDto {
   shootOffArrows?: number;
 
   @ApiPropertyOptional({
-    example: 1,
-    description:
-      'Flechas por arquero en la minironda entre perdedores empatados',
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(10)
-  playoffArrows?: number;
-
-  @ApiPropertyOptional({
     description: 'Juez de la categoría: uno de los jueces del torneo',
   })
   @IsOptional()
