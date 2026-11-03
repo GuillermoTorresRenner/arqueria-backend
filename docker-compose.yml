@@ -30,7 +30,7 @@ services:
       - internal
 
   backend:
-    image: 'lanek/abma-backend:test'
+    image: 'lanek/abma-backend:latest'
     container_name: '${PREFIX}_backend'
     restart: unless-stopped
     env_file:

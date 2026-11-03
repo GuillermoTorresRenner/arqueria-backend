@@ -7,7 +7,8 @@ on:
       - main
 
 # Entorno único: `main` despliega sobre la infraestructura que antes era de QA
-# (rutas abma/qa/*, secret QA_ENV_VARS, tag :test, dominios *.lanek.cloud).
+# (rutas abma/qa/*, secret QA_ENV_VARS, dominios *.lanek.cloud, y en el compose
+# el proyecto abma_qa, la red abma_internal_net_qa y el volumen abma_qa_postgres_data).
 # Se mantiene así a propósito para no migrar BD, volúmenes ni DNS.
 env:
   DOCKERHUB_REPOSITORY: lanek/abma-backend
@@ -52,9 +53,9 @@ jobs:
       - name: Build, tag and push image
         run: |
           COMMIT_TAG=${{ github.sha }}
-          docker build -t "$DOCKERHUB_REPOSITORY:test-$COMMIT_TAG" -t "$DOCKERHUB_REPOSITORY:test" .
-          docker push "$DOCKERHUB_REPOSITORY:test-$COMMIT_TAG"
-          docker push "$DOCKERHUB_REPOSITORY:test"
+          docker build -t "$DOCKERHUB_REPOSITORY:prod-$COMMIT_TAG" -t "$DOCKERHUB_REPOSITORY:latest" .
+          docker push "$DOCKERHUB_REPOSITORY:prod-$COMMIT_TAG"
+          docker push "$DOCKERHUB_REPOSITORY:latest"
 
       - name: Upload files to VPS
         uses: appleboy/scp-action@v0.1.4
@@ -63,7 +64,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT || 22 }}
-          source: 'docker-compose.test.yml'
+          source: 'docker-compose.yml'
           target: ${{ env.PROJECT_PATH }}/
           strip_components: 0
           overwrite: true
@@ -91,12 +92,6 @@ jobs:
             ABMA_ENV_EOF
             chmod 600 .env
 
-            # El scp sube docker-compose.test.yml; el compose lo espera como docker-compose.yml
-            if [ -f docker-compose.test.yml ]; then
-              rm -f docker-compose.yml
-              mv docker-compose.test.yml docker-compose.yml
-            fi
-
             # Solo se leen las variables que usa este script. Cargar el .env
             # entero con `source` fallaba con valores con espacios sin comillas
             # (p. ej. un App Password de Gmail); docker compose sí los admite.
@@ -109,7 +104,7 @@ jobs:
 
             echo "=== Descargando imagen ==="
             for i in 1 2 3; do
-              docker pull "$DOCKERHUB_REPOSITORY:test" && break
+              docker pull "$DOCKERHUB_REPOSITORY:latest" && break
               echo "Intento $i falló, reintentando en 10s..."; sleep 10
               [ $i -eq 3 ] && { echo "No se pudo descargar la imagen"; exit 1; }
             done
