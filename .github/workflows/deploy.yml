@@ -7,7 +7,7 @@ on:
       - main
 
 # Entorno único: `main` despliega sobre la infraestructura que antes era de QA
-# (rutas abma/qa/*, secret QA_ENV_VARS, dominios *.lanek.cloud, y en el compose
+# (rutas abma/qa/*, secret QA_ENV_VARS, dominios galadhrym.cl / api.galadhrym.cl, y en el compose
 # el proyecto abma_qa, la red abma_internal_net_qa y el volumen abma_qa_postgres_data).
 # Se mantiene así a propósito para no migrar BD, volúmenes ni DNS.
 env:
