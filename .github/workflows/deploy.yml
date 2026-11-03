@@ -1,11 +1,14 @@
-name: Deploy QA Backend to Hostinger VPS
+name: Deploy Backend to Hostinger VPS
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - QA
+      - main
 
+# Entorno único: `main` despliega sobre la infraestructura que antes era de QA
+# (rutas abma/qa/*, secret QA_ENV_VARS, tag :test, dominios *.lanek.cloud).
+# Se mantiene así a propósito para no migrar BD, volúmenes ni DNS.
 env:
   DOCKERHUB_REPOSITORY: lanek/abma-backend
   PROJECT_PATH: /home/deployer/proyectos/abma/qa/back
